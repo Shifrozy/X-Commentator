@@ -2,10 +2,8 @@
  * X-Commentator AI - Content Script
  * Injects AI comment buttons into X.com tweets and handles comment generation.
  * 
- * Uses multiple strategies to ensure buttons are injected:
- * 1. Initial scan on load
- * 2. MutationObserver for infinite scroll
- * 3. setInterval fallback as safety net
+ * APPROACH: Floating button at top-right of each tweet article
+ * (avoids X.com's action bar overflow/flex clipping issues)
  */
 
 (function () {
@@ -19,7 +17,7 @@
   const LOADING_CLASS = 'xcai-loading';
   const TOAST_CLASS = 'xcai-toast';
   const PROCESSED_ATTR = 'data-xcai-processed';
-  const SCAN_INTERVAL_MS = 2000; // Fallback scan every 2s
+  const SCAN_INTERVAL_MS = 2000;
   const OBSERVER_DEBOUNCE_MS = 800;
 
   // ─── SVG Icons ─────────────────────────────────────────────
@@ -59,10 +57,8 @@
   // ─── Extract Tweet Text ────────────────────────────────────
   function extractTweetText(tweetElement) {
     try {
-      // Try data-testid="tweetText" first
       var tweetTextEl = tweetElement.querySelector('[data-testid="tweetText"]');
       if (!tweetTextEl) {
-        // Fallback: look for any div with lang attribute containing text
         tweetTextEl = tweetElement.querySelector('div[lang]');
       }
       if (!tweetTextEl) return null;
@@ -91,16 +87,15 @@
     }
   }
 
-  // ─── Create AI Comment Button ──────────────────────────────
+  // ─── Create Floating AI Comment Button ─────────────────────
   function createCommentButton() {
     var wrapper = document.createElement('div');
     wrapper.className = WRAPPER_CLASS;
-    wrapper.style.cssText = 'display:inline-flex;align-items:center;margin-left:2px;';
 
     var btn = document.createElement('button');
     btn.className = BUTTON_CLASS;
     btn.innerHTML = SPARKLE_ICON;
-    btn.title = 'Generate AI Comment';
+    btn.title = 'AI Comment ✨';
     btn.setAttribute('aria-label', 'Generate AI Comment');
     btn.type = 'button';
 
@@ -109,6 +104,7 @@
       e.stopPropagation();
       e.stopImmediatePropagation();
       handleCommentClick(btn);
+      return false;
     }, true);
 
     wrapper.appendChild(btn);
@@ -117,24 +113,20 @@
 
   // ─── Create Comment Preview Card ───────────────────────────
   function createPreviewCard(comment, tweetArticle) {
-    // Remove existing preview cards in this tweet
     var existingCards = tweetArticle.querySelectorAll('.xcai-preview-card');
     existingCards.forEach(function (c) { c.remove(); });
 
     var card = document.createElement('div');
     card.className = 'xcai-preview-card';
 
-    // Header
     var header = document.createElement('div');
     header.className = 'xcai-preview-header';
     header.innerHTML = SPARKLE_ICON + ' <span>AI Generated Comment</span>';
 
-    // Body
     var body = document.createElement('div');
     body.className = 'xcai-preview-body';
     body.textContent = comment;
 
-    // Actions
     var actions = document.createElement('div');
     actions.className = 'xcai-preview-actions';
 
@@ -204,42 +196,33 @@
   // ─── Insert Reply into Twitter ─────────────────────────────
   function insertReply(comment, tweetArticle) {
     try {
-      // Click the reply button on the tweet
       var replyBtn = tweetArticle.querySelector('[data-testid="reply"]');
       if (replyBtn) {
         replyBtn.click();
 
-        // Wait for the reply modal/box to open
         setTimeout(function () {
-          // Try multiple selectors for the reply textbox
           var replyBox = document.querySelector('[data-testid="tweetTextarea_0"]') ||
-                         document.querySelector('[data-testid="tweetTextarea_0RichTextInputContent"]') ||
                          document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-                         document.querySelector('.DraftEditor-root [role="textbox"]');
+                         document.querySelector('[contenteditable="true"][role="textbox"]');
 
           if (replyBox) {
             replyBox.focus();
-            // Use execCommand for contenteditable
             document.execCommand('insertText', false, comment);
             showToast('Comment inserted! Click Reply to post.', 'success');
           } else {
-            // Fallback: copy to clipboard
             navigator.clipboard.writeText(comment).then(function () {
               showToast('Comment copied! Paste into reply box.', 'info');
             });
           }
         }, 1000);
       } else {
-        // Fallback: copy to clipboard
         navigator.clipboard.writeText(comment).then(function () {
           showToast('Comment copied to clipboard!', 'info');
         });
       }
     } catch (e) {
       console.error('[X-Commentator] Insert reply error:', e);
-      navigator.clipboard.writeText(comment).then(function () {
-        showToast('Comment copied to clipboard!', 'info');
-      });
+      navigator.clipboard.writeText(comment);
     }
   }
 
@@ -259,18 +242,15 @@
 
     console.log('[X-Commentator] Generating comment for:', tweetText.substring(0, 80) + '...');
 
-    // Set loading state
     btn.classList.add(LOADING_CLASS);
     btn.innerHTML = LOADING_ICON;
     btn.disabled = true;
 
-    // Send message to background script
     try {
       chrome.runtime.sendMessage({
         action: 'generateComment',
         tweetText: tweetText
       }, function (response) {
-        // Reset button
         btn.classList.remove(LOADING_CLASS);
         btn.innerHTML = SPARKLE_ICON;
         btn.disabled = false;
@@ -283,14 +263,8 @@
 
         if (response && response.success) {
           var card = createPreviewCard(response.comment, tweetArticle);
-          // Insert the card after the action bar
-          var actionGroups = tweetArticle.querySelectorAll('[role="group"]');
-          var lastGroup = actionGroups[actionGroups.length - 1];
-          if (lastGroup && lastGroup.parentNode) {
-            lastGroup.parentNode.insertBefore(card, lastGroup.nextSibling);
-          } else {
-            tweetArticle.appendChild(card);
-          }
+          // Insert card at the bottom of the tweet article
+          tweetArticle.appendChild(card);
           showToast('AI comment generated!', 'success');
         } else {
           var errMsg = (response && response.error) ? response.error : 'Failed to generate comment.';
@@ -310,35 +284,25 @@
   function injectButtons() {
     try {
       var tweets = document.querySelectorAll('article[data-testid="tweet"]');
-
       if (tweets.length === 0) {
-        // Fallback: try just article elements
         tweets = document.querySelectorAll('article');
       }
 
       var injectedCount = 0;
 
       tweets.forEach(function (tweet) {
-        // Skip if already processed
         if (tweet.hasAttribute(PROCESSED_ATTR)) return;
-
-        // Find all role="group" elements (action bars)
-        var groups = tweet.querySelectorAll('[role="group"]');
-        if (groups.length === 0) return;
-
-        // Use the LAST group — that's the one with reply/retweet/like buttons
-        var actionGroup = groups[groups.length - 1];
-
-        // Double check: this group should contain the reply/like/retweet buttons
-        // Skip if we already injected into this group
-        if (actionGroup.querySelector('.' + WRAPPER_CLASS)) {
+        if (tweet.querySelector('.' + WRAPPER_CLASS)) {
           tweet.setAttribute(PROCESSED_ATTR, 'true');
           return;
         }
 
-        // Create and inject our button
+        // Make article position:relative so our absolute button works
+        tweet.style.position = 'relative';
+
+        // Create floating button and attach it to the tweet
         var btnWrapper = createCommentButton();
-        actionGroup.appendChild(btnWrapper);
+        tweet.appendChild(btnWrapper);
 
         tweet.setAttribute(PROCESSED_ATTR, 'true');
         injectedCount++;
@@ -352,11 +316,10 @@
     }
   }
 
-  // ─── Mutation Observer (for infinite scroll & SPA nav) ─────
+  // ─── Mutation Observer ─────────────────────────────────────
   function setupObserver() {
     try {
       var debounceTimer = null;
-
       var observer = new MutationObserver(function () {
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(injectButtons, OBSERVER_DEBOUNCE_MS);
@@ -376,11 +339,7 @@
   // ─── Fallback: Periodic Scan ───────────────────────────────
   function setupFallbackScan() {
     setInterval(function () {
-      try {
-        injectButtons();
-      } catch (e) {
-        // Silent fail for fallback
-      }
+      try { injectButtons(); } catch (e) { /* silent */ }
     }, SCAN_INTERVAL_MS);
     console.log('[X-Commentator] Fallback scanner active (every ' + SCAN_INTERVAL_MS + 'ms).');
   }
@@ -389,11 +348,10 @@
   function init() {
     console.log('[X-Commentator] Initializing on: ' + window.location.href);
 
-    // Check API key (non-blocking)
     try {
       chrome.runtime.sendMessage({ action: 'getSettings' }, function (response) {
         if (chrome.runtime.lastError) {
-          console.warn('[X-Commentator] Could not check settings:', chrome.runtime.lastError.message);
+          console.warn('[X-Commentator] Settings check:', chrome.runtime.lastError.message);
           return;
         }
         if (response && response.success && !response.settings.apiKey) {
@@ -404,24 +362,17 @@
       console.warn('[X-Commentator] Settings check skipped:', e.message);
     }
 
-    // Strategy 1: Immediate scan
     injectButtons();
-
-    // Strategy 2: Delayed scan (wait for SPA to render)
     setTimeout(injectButtons, 1500);
     setTimeout(injectButtons, 3000);
     setTimeout(injectButtons, 5000);
 
-    // Strategy 3: MutationObserver for dynamic content
     setupObserver();
-
-    // Strategy 4: Periodic fallback scan
     setupFallbackScan();
 
     console.log('[X-Commentator] ✨ All systems active!');
   }
 
-  // ─── Start ─────────────────────────────────────────────────
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

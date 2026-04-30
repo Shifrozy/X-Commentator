@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>X-Commentator AI</title>
+  <link rel="stylesheet" href="popup.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+</head>
+<body>
+  <div class="popup-container">
+    <!-- Header -->
+    <header class="popup-header">
+      <div class="header-brand">
+        <div class="logo-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/>
+          </svg>
+        </div>
+        <div>
+          <h1 class="header-title">X-Commentator</h1>
+          <p class="header-subtitle">AI-Powered Comments</p>
+        </div>
+      </div>
+      <div class="status-badge" id="statusBadge">
+        <span class="status-dot"></span>
+        <span class="status-text">Inactive</span>
+      </div>
+    </header>
+
+    <!-- API Key Section -->
+    <section class="settings-section">
+      <label class="input-label" for="apiKey">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"/>
+        </svg>
+        Groq API Key
+      </label>
+      <div class="input-group">
+        <input type="password" id="apiKey" placeholder="gsk_xxxxxxxxxxxxxxxx" autocomplete="off" spellcheck="false">
+        <button class="toggle-visibility" id="toggleKey" title="Show/Hide">
+          <svg id="eyeIcon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+          </svg>
+        </button>
+      </div>
+      <a href="https://console.groq.com/keys" target="_blank" class="api-link">
+        Get your free API key →
+      </a>
+    </section>
+
+    <!-- Model Selection -->
+    <section class="settings-section">
+      <label class="input-label" for="model">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+        </svg>
+        AI Model
+      </label>
+      <select id="model">
+        <option value="llama-3.3-70b-versatile">LLaMA 3.3 70B (Best Quality)</option>
+        <option value="llama-3.1-8b-instant">LLaMA 3.1 8B (Fastest)</option>
+        <option value="mixtral-8x7b-32768">Mixtral 8x7B (Balanced)</option>
+        <option value="gemma2-9b-it">Gemma 2 9B</option>
+      </select>
+    </section>
+
+    <!-- Tone Selection -->
+    <section class="settings-section">
+      <label class="input-label">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+        </svg>
+        Comment Tone
+      </label>
+      <div class="tone-grid" id="toneGrid">
+        <button class="tone-btn active" data-tone="friendly">
+          <span class="tone-emoji">😊</span>
+          <span class="tone-name">Friendly</span>
+        </button>
+        <button class="tone-btn" data-tone="professional">
+          <span class="tone-emoji">💼</span>
+          <span class="tone-name">Professional</span>
+        </button>
+        <button class="tone-btn" data-tone="funny">
+          <span class="tone-emoji">😂</span>
+          <span class="tone-name">Funny</span>
+        </button>
+        <button class="tone-btn" data-tone="supportive">
+          <span class="tone-emoji">💪</span>
+          <span class="tone-name">Supportive</span>
+        </button>
+        <button class="tone-btn" data-tone="savage">
+          <span class="tone-emoji">🔥</span>
+          <span class="tone-name">Savage</span>
+        </button>
+        <button class="tone-btn" data-tone="intellectual">
+          <span class="tone-emoji">🧠</span>
+          <span class="tone-name">Intellectual</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Language Selection -->
+    <section class="settings-section">
+      <label class="input-label" for="language">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+        </svg>
+        Language
+      </label>
+      <select id="language">
+        <option value="english">English</option>
+        <option value="urdu">Urdu (Roman)</option>
+        <option value="hindi">Hindi (Roman)</option>
+        <option value="arabic">Arabic</option>
+      </select>
+    </section>
+
+    <!-- Advanced Settings -->
+    <details class="advanced-toggle">
+      <summary>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+        </svg>
+        Advanced Settings
+      </summary>
+      <div class="advanced-content">
+        <div class="settings-section">
+          <label class="input-label" for="customPrompt">Custom Instructions</label>
+          <textarea id="customPrompt" placeholder="e.g., Always mention crypto, focus on tech topics..." rows="3"></textarea>
+        </div>
+        <div class="slider-group">
+          <label class="input-label" for="temperature">
+            Creativity: <span id="tempValue">0.8</span>
+          </label>
+          <input type="range" id="temperature" min="0.1" max="1.5" step="0.1" value="0.8">
+          <div class="slider-labels">
+            <span>Precise</span>
+            <span>Creative</span>
+          </div>
+        </div>
+        <div class="slider-group">
+          <label class="input-label" for="maxTokens">
+            Max Length: <span id="tokensValue">280</span> tokens
+          </label>
+          <input type="range" id="maxTokens" min="50" max="500" step="10" value="280">
+          <div class="slider-labels">
+            <span>Short</span>
+            <span>Long</span>
+          </div>
+        </div>
+      </div>
+    </details>
+
+    <!-- Save Button -->
+    <button class="save-btn" id="saveBtn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="20 6 9 17 4 12"/>
+      </svg>
+      Save Settings
+    </button>
+
+    <!-- Footer -->
+    <footer class="popup-footer">
+      <span>Powered by</span>
+      <a href="https://console.groq.com" target="_blank">Groq</a>
+      <span>•</span>
+      <span>v1.0.0</span>
+    </footer>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

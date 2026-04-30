@@ -1,0 +1,225 @@
+/* ═══════════════════════════════════════════════════════════
+   X-Commentator AI — Content Script Styles
+   Injected into x.com / twitter.com
+   ═══════════════════════════════════════════════════════════ */
+
+/* ─── AI Comment Button ───────────────────────────────────── */
+.xcai-btn-wrapper {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+}
+
+.xcai-comment-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: rgb(113, 118, 123);
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  position: relative;
+  outline: none;
+}
+
+.xcai-comment-btn:hover {
+  background: rgba(120, 86, 255, 0.1);
+  color: #7856ff;
+  transform: scale(1.1);
+}
+
+.xcai-comment-btn:active {
+  transform: scale(0.95);
+}
+
+.xcai-comment-btn.xcai-loading {
+  pointer-events: none;
+  color: #7856ff;
+}
+
+/* ─── Spinner Animation ───────────────────────────────────── */
+.xcai-spinner {
+  animation: xcai-spin 0.8s linear infinite;
+}
+
+@keyframes xcai-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* ─── Preview Card ────────────────────────────────────────── */
+.xcai-preview-card {
+  margin: 8px 16px 4px 16px;
+  padding: 0;
+  border-radius: 16px;
+  border: 1px solid rgba(120, 86, 255, 0.25);
+  background: linear-gradient(135deg, rgba(120, 86, 255, 0.06) 0%, rgba(88, 55, 220, 0.03) 100%);
+  overflow: hidden;
+  animation: xcai-slideIn 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  backdrop-filter: blur(8px);
+}
+
+@keyframes xcai-slideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+    max-height: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-height: 300px;
+  }
+}
+
+.xcai-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px 6px 14px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #7856ff;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+}
+
+.xcai-preview-header svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.xcai-preview-body {
+  padding: 4px 14px 12px 14px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: inherit;
+  word-wrap: break-word;
+}
+
+.xcai-preview-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 10px;
+  border-top: 1px solid rgba(120, 86, 255, 0.12);
+  background: rgba(120, 86, 255, 0.03);
+}
+
+/* ─── Action Buttons ──────────────────────────────────────── */
+.xcai-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  outline: none;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.xcai-copy-btn {
+  background: rgba(120, 86, 255, 0.1);
+  color: #7856ff;
+}
+.xcai-copy-btn:hover {
+  background: rgba(120, 86, 255, 0.2);
+}
+
+.xcai-regen-btn {
+  background: rgba(255, 165, 0, 0.1);
+  color: #e09600;
+}
+.xcai-regen-btn:hover {
+  background: rgba(255, 165, 0, 0.2);
+}
+
+.xcai-post-btn {
+  background: rgba(29, 155, 240, 0.1);
+  color: #1d9bf0;
+  margin-left: auto;
+}
+.xcai-post-btn:hover {
+  background: rgba(29, 155, 240, 0.2);
+}
+
+.xcai-close-btn {
+  background: rgba(239, 68, 68, 0.08);
+  color: rgb(180, 80, 80);
+  padding: 6px 8px;
+  font-size: 14px;
+}
+.xcai-close-btn:hover {
+  background: rgba(239, 68, 68, 0.18);
+}
+
+/* ─── Toast Notifications ─────────────────────────────────── */
+.xcai-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  padding: 12px 24px;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  z-index: 999999;
+  opacity: 0;
+  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  pointer-events: none;
+  white-space: nowrap;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(12px);
+}
+
+.xcai-toast-visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.xcai-toast-success {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.9), rgba(22, 163, 74, 0.95));
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.xcai-toast-error {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.9), rgba(220, 38, 38, 0.95));
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.xcai-toast-info {
+  background: linear-gradient(135deg, rgba(120, 86, 255, 0.9), rgba(88, 55, 220, 0.95));
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+/* ─── Dark Theme Compatibility ────────────────────────────── */
+/* X uses a dark background class; our styles adapt automatically since we use rgba */
+
+/* ─── Responsive ──────────────────────────────────────────── */
+@media (max-width: 500px) {
+  .xcai-preview-card {
+    margin: 6px 8px 4px 8px;
+  }
+
+  .xcai-action-btn {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+
+  .xcai-preview-body {
+    font-size: 14px;
+  }
+}

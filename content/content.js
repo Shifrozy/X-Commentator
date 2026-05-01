@@ -3,7 +3,7 @@
  * 
  * FLOW: User clicks X's native reply/comment button (💬) on any tweet
  *       → X opens its reply box
- *       → Extension detects it, reads the tweet, generates AI comment
+ *       → Extension reads the tweet, generates AI comment via Groq
  *       → Auto-types the comment into X's reply textbox ONLY
  *       → User just clicks "Reply" to post
  */
@@ -18,8 +18,8 @@
   const SCAN_INTERVAL_MS = 1500;
   const PROCESSED_REPLY_ATTR = 'data-xcai-reply-hooked';
 
-  // ─── Prevent double generation ─────────────────────────────
-  var isGenerating = false;
+  // ─── Guard against double execution ────────────────────────
+  var currentGenerationId = 0;
 
   // ─── Toast Notification ────────────────────────────────────
   function showToast(message, type) {
@@ -78,77 +78,61 @@
     }
   }
 
-  // ─── Find the reply textbox inside X's reply dialog ────────
+  // ─── Find the REPLY textbox (NOT the compose box) ──────────
   function findReplyTextbox() {
-    // Strategy 1: Find textbox inside the reply dialog/modal
-    var dialog = document.querySelector('[role="dialog"]');
-    if (dialog) {
-      var box = dialog.querySelector('div[role="textbox"][contenteditable="true"]');
-      if (box) return box;
-      // Try the draft editor
-      box = dialog.querySelector('[data-testid="tweetTextarea_0"] div[contenteditable="true"]');
-      if (box) return box;
-      box = dialog.querySelector('[contenteditable="true"]');
-      if (box) return box;
-    }
-
-    // Strategy 2: Find the inline reply textbox (when replying inline, no dialog)
-    var replySection = document.querySelector('[data-testid="inline_reply_offscreen"]');
-    if (replySection) {
-      var box = replySection.querySelector('div[role="textbox"][contenteditable="true"]');
-      if (box) return box;
-    }
-
-    // Strategy 3: Find any visible reply textbox on the page
+    // Get ALL visible contenteditable textboxes on the page
     var allBoxes = document.querySelectorAll('div[role="textbox"][contenteditable="true"]');
+    var visibleBoxes = [];
+
     for (var i = 0; i < allBoxes.length; i++) {
       var rect = allBoxes[i].getBoundingClientRect();
-      // Only pick visible ones (has height and is in viewport)
-      if (rect.height > 0 && rect.top >= 0 && rect.top < window.innerHeight) {
-        return allBoxes[i];
+      if (rect.height > 0 && rect.width > 0 && rect.top >= 0 && rect.top < window.innerHeight) {
+        visibleBoxes.push(allBoxes[i]);
       }
     }
 
-    return null;
+    if (visibleBoxes.length === 0) return null;
+
+    // The LAST visible textbox is the reply box
+    // (compose box is at the top = first, reply box is below = last)
+    var replyBox = visibleBoxes[visibleBoxes.length - 1];
+
+    console.log('[X-Commentator] Found ' + visibleBoxes.length + ' textbox(es), using the last one (reply box).');
+    return replyBox;
   }
 
-  // ─── Type text into reply box (SAFE - single target) ───────
-  function typeIntoReplyBox(text) {
+  // ─── Type text into reply box (SINGLE execution) ───────────
+  function typeIntoReplyBox(text, genId) {
+    // Abort if a newer generation started
+    if (genId !== currentGenerationId) {
+      console.log('[X-Commentator] Stale generation, aborting type.');
+      return 'abort';
+    }
+
     try {
       var replyBox = findReplyTextbox();
+      if (!replyBox) return 'retry';
 
-      if (!replyBox) {
-        console.log('[X-Commentator] Reply textbox not found yet...');
-        return false;
-      }
-
-      // Ensure we're clicking INTO the textbox to give it proper focus
+      // Focus and click the reply box
+      replyBox.focus();
       replyBox.click();
 
-      // Small delay to let X's React handle the click
-      setTimeout(function () {
-        // Focus the textbox
-        replyBox.focus();
+      // Place cursor at end (don't select all, just move to end)
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      var range = document.createRange();
+      range.selectNodeContents(replyBox);
+      range.collapse(false); // collapse to end
+      sel.addRange(range);
 
-        // Move cursor to end / select all existing content
-        var sel = window.getSelection();
-        sel.removeAllRanges();
-        var range = document.createRange();
-        range.selectNodeContents(replyBox);
-        range.collapse(false); // collapse to end
-        sel.addRange(range);
+      // Insert text
+      document.execCommand('insertText', false, text);
 
-        // Insert text using execCommand (works with React/contenteditable)
-        document.execCommand('insertText', false, text);
-
-        console.log('[X-Commentator] ✅ Comment typed into reply box!');
-        showToast('✅ AI comment ready! Click Reply to post.', 'success');
-      }, 100);
-
-      return true;
+      console.log('[X-Commentator] ✅ Comment typed into reply box!');
+      return 'success';
     } catch (e) {
-      console.error('[X-Commentator] Error typing into reply box:', e);
-      return false;
+      console.error('[X-Commentator] Error typing:', e);
+      return 'retry';
     }
   }
 
@@ -159,14 +143,11 @@
       return;
     }
 
-    if (isGenerating) {
-      console.log('[X-Commentator] Already generating, skipping...');
-      return;
-    }
+    // Increment generation ID to invalidate any previous pending generations
+    currentGenerationId++;
+    var myGenId = currentGenerationId;
 
-    isGenerating = true;
-
-    console.log('[X-Commentator] Generating comment for:', tweetText.substring(0, 80) + '...');
+    console.log('[X-Commentator] Generating comment (gen #' + myGenId + ')...');
     showToast('✨ Generating AI comment...', 'info');
 
     try {
@@ -174,7 +155,11 @@
         action: 'generateComment',
         tweetText: tweetText
       }, function (response) {
-        isGenerating = false;
+        // Check if this generation is still the current one
+        if (myGenId !== currentGenerationId) {
+          console.log('[X-Commentator] Generation #' + myGenId + ' superseded, ignoring.');
+          return;
+        }
 
         if (chrome.runtime.lastError) {
           console.error('[X-Commentator] Runtime error:', chrome.runtime.lastError);
@@ -184,33 +169,37 @@
 
         if (response && response.success) {
           var comment = response.comment;
-          console.log('[X-Commentator] Comment generated:', comment);
+          console.log('[X-Commentator] Comment generated:', comment.substring(0, 60) + '...');
 
-          // Try to type with a few retries (reply box may need time to render)
-          var typed = false;
+          // Try to type with retries
           var attempt = 0;
           var maxAttempts = 8;
 
-          var tryType = function () {
-            if (typed || attempt >= maxAttempts) {
-              if (!typed) {
-                // All retries failed — copy to clipboard as fallback
-                navigator.clipboard.writeText(comment).then(function () {
-                  showToast('📋 Comment copied! Paste with Ctrl+V.', 'info');
-                });
-              }
+          function tryType() {
+            if (myGenId !== currentGenerationId) return; // superseded
+            if (attempt >= maxAttempts) {
+              // Fallback: copy to clipboard
+              navigator.clipboard.writeText(comment).then(function () {
+                showToast('📋 Comment copied! Press Ctrl+V to paste.', 'info');
+              });
               return;
             }
-            attempt++;
-            var success = typeIntoReplyBox(comment);
-            if (success) {
-              typed = true;
-            } else {
-              setTimeout(tryType, 400);
-            }
-          };
 
-          tryType();
+            attempt++;
+            var result = typeIntoReplyBox(comment, myGenId);
+
+            if (result === 'success') {
+              showToast('✅ AI comment ready! Click Reply to post.', 'success');
+            } else if (result === 'abort') {
+              // Do nothing, superseded
+            } else {
+              // retry after delay
+              setTimeout(tryType, 500);
+            }
+          }
+
+          // Start typing after a brief delay for the reply box to fully render
+          setTimeout(tryType, 300);
 
         } else {
           var errMsg = (response && response.error) ? response.error : 'Failed to generate.';
@@ -218,14 +207,10 @@
         }
       });
     } catch (e) {
-      isGenerating = false;
       console.error('[X-Commentator] Error:', e);
       showToast('Extension error: ' + e.message, 'error');
     }
   }
-
-  // ─── Store the tweet text when reply button is clicked ─────
-  var lastClickedTweetText = null;
 
   // ─── Hook into X's reply buttons ──────────────────────────
   function hookReplyButtons() {
@@ -236,22 +221,21 @@
         if (btn.hasAttribute(PROCESSED_REPLY_ATTR)) return;
         btn.setAttribute(PROCESSED_REPLY_ATTR, 'true');
 
-        btn.addEventListener('click', function (e) {
+        btn.addEventListener('click', function () {
           // Find the parent tweet article
           var tweetArticle = btn.closest('article[data-testid="tweet"]') || btn.closest('article');
           if (!tweetArticle) return;
 
-          // Extract the tweet text NOW (before the dialog opens)
+          // Extract the tweet text NOW (before dialog opens)
           var tweetText = extractTweetText(tweetArticle);
           if (!tweetText) return;
 
-          lastClickedTweetText = tweetText;
           console.log('[X-Commentator] Reply clicked. Tweet:', tweetText.substring(0, 60) + '...');
 
-          // Wait for X's reply box to appear, then generate
+          // Wait for X's reply UI to appear, then generate
           setTimeout(function () {
-            generateAndType(lastClickedTweetText);
-          }, 1000);
+            generateAndType(tweetText);
+          }, 1200);
 
         }, false);
       });
@@ -273,8 +257,6 @@
         childList: true,
         subtree: true
       });
-
-      console.log('[X-Commentator] MutationObserver active.');
     } catch (e) {
       console.error('[X-Commentator] Observer error:', e);
     }
@@ -295,7 +277,7 @@
       chrome.runtime.sendMessage({ action: 'getSettings' }, function (response) {
         if (chrome.runtime.lastError) return;
         if (response && response.success && !response.settings.apiKey) {
-          showToast('⚙️ X-Commentator: Set your Groq API key in extension settings.', 'info');
+          showToast('⚙️ Set your Groq API key in X-Commentator settings.', 'info');
         }
       });
     } catch (e) { /* skip */ }
@@ -307,7 +289,7 @@
     setupObserver();
     setupFallbackScan();
 
-    console.log('[X-Commentator] ✨ Ready! Click any reply button to auto-generate AI comments.');
+    console.log('[X-Commentator] ✨ Ready!');
   }
 
   if (document.readyState === 'loading') {

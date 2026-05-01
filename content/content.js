@@ -1,9 +1,11 @@
 /**
  * X-Commentator AI - Content Script
- * Injects AI comment buttons into X.com tweets and handles comment generation.
  * 
- * APPROACH: Floating button at top-right of each tweet article
- * (avoids X.com's action bar overflow/flex clipping issues)
+ * FLOW: User clicks X's native reply/comment button (💬) on any tweet
+ *       → X opens its reply box
+ *       → Extension detects it, reads the tweet, generates AI comment
+ *       → Auto-types the comment into X's reply textbox
+ *       → User just clicks "Reply" to post
  */
 
 (function () {
@@ -12,29 +14,15 @@
   console.log('[X-Commentator] Content script starting...');
 
   // ─── Constants ─────────────────────────────────────────────
-  const BUTTON_CLASS = 'xcai-comment-btn';
-  const WRAPPER_CLASS = 'xcai-btn-wrapper';
-  const LOADING_CLASS = 'xcai-loading';
   const TOAST_CLASS = 'xcai-toast';
-  const PROCESSED_ATTR = 'data-xcai-processed';
-  const SCAN_INTERVAL_MS = 2000;
-  const OBSERVER_DEBOUNCE_MS = 800;
-
-  // ─── SVG Icons ─────────────────────────────────────────────
-  const SPARKLE_ICON = `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L15.09 8.26L22 9.27L17 14.14L18.18 21.02L12 17.77L5.82 21.02L7 14.14L2 9.27L8.91 8.26L12 2Z"/></svg>`;
-
-  const LOADING_ICON = `<svg class="xcai-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10" stroke-opacity="0.25"/><path d="M12 2a10 10 0 0 1 10 10" stroke-linecap="round"/></svg>`;
-
-  const COPY_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
-
-  const REFRESH_ICON = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>`;
+  const SCAN_INTERVAL_MS = 1500;
+  const PROCESSED_REPLY_ATTR = 'data-xcai-reply-hooked';
 
   // ─── Toast Notification ────────────────────────────────────
   function showToast(message, type) {
     try {
       type = type || 'info';
-      var existing = document.querySelectorAll('.' + TOAST_CLASS);
-      existing.forEach(function (t) { t.remove(); });
+      document.querySelectorAll('.' + TOAST_CLASS).forEach(function (t) { t.remove(); });
 
       var toast = document.createElement('div');
       toast.className = TOAST_CLASS + ' xcai-toast-' + type;
@@ -48,18 +36,18 @@
       setTimeout(function () {
         toast.classList.remove('xcai-toast-visible');
         setTimeout(function () { toast.remove(); }, 300);
-      }, 3000);
+      }, 3500);
     } catch (e) {
       console.error('[X-Commentator] Toast error:', e);
     }
   }
 
-  // ─── Extract Tweet Text ────────────────────────────────────
-  function extractTweetText(tweetElement) {
+  // ─── Extract Tweet Text from article ───────────────────────
+  function extractTweetText(tweetArticle) {
     try {
-      var tweetTextEl = tweetElement.querySelector('[data-testid="tweetText"]');
+      var tweetTextEl = tweetArticle.querySelector('[data-testid="tweetText"]');
       if (!tweetTextEl) {
-        tweetTextEl = tweetElement.querySelector('div[lang]');
+        tweetTextEl = tweetArticle.querySelector('div[lang]');
       }
       if (!tweetTextEl) return null;
 
@@ -87,232 +75,154 @@
     }
   }
 
-  // ─── Create Floating AI Comment Button ─────────────────────
-  function createCommentButton() {
-    var wrapper = document.createElement('div');
-    wrapper.className = WRAPPER_CLASS;
-
-    var btn = document.createElement('button');
-    btn.className = BUTTON_CLASS;
-    btn.innerHTML = SPARKLE_ICON;
-    btn.title = 'AI Comment ✨';
-    btn.setAttribute('aria-label', 'Generate AI Comment');
-    btn.type = 'button';
-
-    btn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      e.stopImmediatePropagation();
-      handleCommentClick(btn);
-      return false;
-    }, true);
-
-    wrapper.appendChild(btn);
-    return wrapper;
-  }
-
-  // ─── Create Comment Preview Card ───────────────────────────
-  function createPreviewCard(comment, tweetArticle) {
-    var existingCards = tweetArticle.querySelectorAll('.xcai-preview-card');
-    existingCards.forEach(function (c) { c.remove(); });
-
-    var card = document.createElement('div');
-    card.className = 'xcai-preview-card';
-
-    var header = document.createElement('div');
-    header.className = 'xcai-preview-header';
-    header.innerHTML = SPARKLE_ICON + ' <span>AI Generated Comment</span>';
-
-    var body = document.createElement('div');
-    body.className = 'xcai-preview-body';
-    body.textContent = comment;
-
-    var actions = document.createElement('div');
-    actions.className = 'xcai-preview-actions';
-
-    // Copy button
-    var copyBtn = document.createElement('button');
-    copyBtn.className = 'xcai-action-btn xcai-copy-btn';
-    copyBtn.innerHTML = COPY_ICON + ' Copy';
-    copyBtn.type = 'button';
-    copyBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      navigator.clipboard.writeText(comment).then(function () {
-        copyBtn.innerHTML = '✓ Copied';
-        showToast('Comment copied to clipboard!', 'success');
-        setTimeout(function () { copyBtn.innerHTML = COPY_ICON + ' Copy'; }, 2000);
-      });
-    }, true);
-
-    // Regenerate button
-    var regenBtn = document.createElement('button');
-    regenBtn.className = 'xcai-action-btn xcai-regen-btn';
-    regenBtn.innerHTML = REFRESH_ICON + ' Regenerate';
-    regenBtn.type = 'button';
-    regenBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      card.remove();
-      var sparkleBtn = tweetArticle.querySelector('.' + BUTTON_CLASS);
-      if (sparkleBtn) handleCommentClick(sparkleBtn);
-    }, true);
-
-    // Post reply button
-    var postBtn = document.createElement('button');
-    postBtn.className = 'xcai-action-btn xcai-post-btn';
-    postBtn.innerHTML = '↵ Reply';
-    postBtn.type = 'button';
-    postBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      insertReply(comment, tweetArticle);
-      card.remove();
-    }, true);
-
-    // Close button
-    var closeBtn = document.createElement('button');
-    closeBtn.className = 'xcai-action-btn xcai-close-btn';
-    closeBtn.innerHTML = '✕';
-    closeBtn.type = 'button';
-    closeBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      e.stopPropagation();
-      card.remove();
-    }, true);
-
-    actions.appendChild(copyBtn);
-    actions.appendChild(regenBtn);
-    actions.appendChild(postBtn);
-    actions.appendChild(closeBtn);
-
-    card.appendChild(header);
-    card.appendChild(body);
-    card.appendChild(actions);
-
-    return card;
-  }
-
-  // ─── Insert Reply into Twitter ─────────────────────────────
-  function insertReply(comment, tweetArticle) {
+  // ─── Extract tweet text from reply dialog ──────────────────
+  function extractTweetTextFromReplyDialog() {
     try {
-      var replyBtn = tweetArticle.querySelector('[data-testid="reply"]');
-      if (replyBtn) {
-        replyBtn.click();
-
-        setTimeout(function () {
-          var replyBox = document.querySelector('[data-testid="tweetTextarea_0"]') ||
-                         document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-                         document.querySelector('[contenteditable="true"][role="textbox"]');
-
-          if (replyBox) {
-            replyBox.focus();
-            document.execCommand('insertText', false, comment);
-            showToast('Comment inserted! Click Reply to post.', 'success');
-          } else {
-            navigator.clipboard.writeText(comment).then(function () {
-              showToast('Comment copied! Paste into reply box.', 'info');
-            });
-          }
-        }, 1000);
-      } else {
-        navigator.clipboard.writeText(comment).then(function () {
-          showToast('Comment copied to clipboard!', 'info');
-        });
+      // In X's reply dialog, the original tweet is shown above the reply box
+      // Look for tweet text inside the dialog/modal
+      var dialog = document.querySelector('[role="dialog"]');
+      if (dialog) {
+        var tweetTextEl = dialog.querySelector('[data-testid="tweetText"]');
+        if (tweetTextEl) {
+          return tweetTextEl.textContent.trim();
+        }
       }
+
+      // Fallback: if we're on a tweet detail page, find the main tweet
+      var mainTweet = document.querySelector('article[data-testid="tweet"]');
+      if (mainTweet) {
+        return extractTweetText(mainTweet);
+      }
+
+      return null;
     } catch (e) {
-      console.error('[X-Commentator] Insert reply error:', e);
-      navigator.clipboard.writeText(comment);
+      console.error('[X-Commentator] Error extracting from dialog:', e);
+      return null;
     }
   }
 
-  // ─── Handle Comment Button Click ───────────────────────────
-  function handleCommentClick(btn) {
-    var tweetArticle = btn.closest('article[data-testid="tweet"]') || btn.closest('article');
-    if (!tweetArticle) {
-      showToast('Could not find tweet.', 'error');
-      return;
-    }
+  // ─── Type text into reply box ──────────────────────────────
+  function typeIntoReplyBox(text) {
+    try {
+      // Find the reply textbox — try multiple selectors
+      var replyBox = document.querySelector('[data-testid="tweetTextarea_0"]') ||
+                     document.querySelector('div[role="textbox"][contenteditable="true"]') ||
+                     document.querySelector('[contenteditable="true"][data-testid]') ||
+                     document.querySelector('.public-DraftEditor-content[contenteditable="true"]');
 
-    var tweetText = extractTweetText(tweetArticle);
+      if (!replyBox) {
+        console.log('[X-Commentator] Reply box not found yet, retrying...');
+        return false;
+      }
+
+      // Focus the reply box
+      replyBox.focus();
+
+      // Clear any existing content first
+      // Use Selection API to select all, then replace
+      var selection = window.getSelection();
+      var range = document.createRange();
+      range.selectNodeContents(replyBox);
+      selection.removeAllRanges();
+      selection.addRange(range);
+
+      // Use insertText to type naturally (triggers React's change detection)
+      document.execCommand('insertText', false, text);
+
+      console.log('[X-Commentator] Comment typed into reply box!');
+      return true;
+    } catch (e) {
+      console.error('[X-Commentator] Error typing into reply box:', e);
+      return false;
+    }
+  }
+
+  // ─── Generate AI Comment and Type It ───────────────────────
+  function generateAndType(tweetText) {
     if (!tweetText) {
       showToast('Could not read tweet text.', 'error');
       return;
     }
 
     console.log('[X-Commentator] Generating comment for:', tweetText.substring(0, 80) + '...');
-
-    btn.classList.add(LOADING_CLASS);
-    btn.innerHTML = LOADING_ICON;
-    btn.disabled = true;
+    showToast('✨ Generating AI comment...', 'info');
 
     try {
       chrome.runtime.sendMessage({
         action: 'generateComment',
         tweetText: tweetText
       }, function (response) {
-        btn.classList.remove(LOADING_CLASS);
-        btn.innerHTML = SPARKLE_ICON;
-        btn.disabled = false;
-
         if (chrome.runtime.lastError) {
           console.error('[X-Commentator] Runtime error:', chrome.runtime.lastError);
-          showToast('Extension error. Try reloading the page.', 'error');
+          showToast('Extension error. Reload the page.', 'error');
           return;
         }
 
         if (response && response.success) {
-          var card = createPreviewCard(response.comment, tweetArticle);
-          // Insert card at the bottom of the tweet article
-          tweetArticle.appendChild(card);
-          showToast('AI comment generated!', 'success');
+          var comment = response.comment;
+          console.log('[X-Commentator] Comment generated:', comment);
+
+          // Try to type into reply box with retries (reply box may take time to appear)
+          var attempts = 0;
+          var maxAttempts = 10;
+          var retryInterval = setInterval(function () {
+            attempts++;
+            var success = typeIntoReplyBox(comment);
+            if (success) {
+              clearInterval(retryInterval);
+              showToast('✅ AI comment ready! Click Reply to post.', 'success');
+            } else if (attempts >= maxAttempts) {
+              clearInterval(retryInterval);
+              // Fallback: copy to clipboard
+              navigator.clipboard.writeText(comment).then(function () {
+                showToast('📋 Comment copied! Paste into reply box.', 'info');
+              });
+            }
+          }, 300);
         } else {
-          var errMsg = (response && response.error) ? response.error : 'Failed to generate comment.';
-          showToast(errMsg, 'error');
+          var errMsg = (response && response.error) ? response.error : 'Failed to generate.';
+          showToast('❌ ' + errMsg, 'error');
         }
       });
     } catch (e) {
-      console.error('[X-Commentator] Send message error:', e);
-      btn.classList.remove(LOADING_CLASS);
-      btn.innerHTML = SPARKLE_ICON;
-      btn.disabled = false;
+      console.error('[X-Commentator] Error:', e);
       showToast('Extension error: ' + e.message, 'error');
     }
   }
 
-  // ─── Inject Buttons into Tweets ────────────────────────────
-  function injectButtons() {
+  // ─── Store the tweet text when reply button is clicked ─────
+  var lastClickedTweetText = null;
+
+  // ─── Hook into X's reply buttons ──────────────────────────
+  function hookReplyButtons() {
     try {
-      var tweets = document.querySelectorAll('article[data-testid="tweet"]');
-      if (tweets.length === 0) {
-        tweets = document.querySelectorAll('article');
-      }
+      var replyButtons = document.querySelectorAll('[data-testid="reply"]');
 
-      var injectedCount = 0;
+      replyButtons.forEach(function (btn) {
+        if (btn.hasAttribute(PROCESSED_REPLY_ATTR)) return;
+        btn.setAttribute(PROCESSED_REPLY_ATTR, 'true');
 
-      tweets.forEach(function (tweet) {
-        if (tweet.hasAttribute(PROCESSED_ATTR)) return;
-        if (tweet.querySelector('.' + WRAPPER_CLASS)) {
-          tweet.setAttribute(PROCESSED_ATTR, 'true');
-          return;
-        }
+        btn.addEventListener('click', function (e) {
+          // Find the parent tweet article
+          var tweetArticle = btn.closest('article[data-testid="tweet"]') || btn.closest('article');
+          if (!tweetArticle) return;
 
-        // Make article position:relative so our absolute button works
-        tweet.style.position = 'relative';
+          // Extract the tweet text NOW (before the dialog opens and DOM changes)
+          var tweetText = extractTweetText(tweetArticle);
+          if (!tweetText) return;
 
-        // Create floating button and attach it to the tweet
-        var btnWrapper = createCommentButton();
-        tweet.appendChild(btnWrapper);
+          lastClickedTweetText = tweetText;
+          console.log('[X-Commentator] Reply button clicked. Tweet:', tweetText.substring(0, 60) + '...');
 
-        tweet.setAttribute(PROCESSED_ATTR, 'true');
-        injectedCount++;
+          // Wait for reply box to appear, then generate and type
+          setTimeout(function () {
+            generateAndType(lastClickedTweetText);
+          }, 800);
+
+        }, false); // Use bubble phase so X's handler runs first (opens the reply box)
       });
-
-      if (injectedCount > 0) {
-        console.log('[X-Commentator] Injected ' + injectedCount + ' button(s). Total tweets: ' + tweets.length);
-      }
     } catch (e) {
-      console.error('[X-Commentator] Error injecting buttons:', e);
+      console.error('[X-Commentator] Error hooking reply buttons:', e);
     }
   }
 
@@ -322,7 +232,7 @@
       var debounceTimer = null;
       var observer = new MutationObserver(function () {
         if (debounceTimer) clearTimeout(debounceTimer);
-        debounceTimer = setTimeout(injectButtons, OBSERVER_DEBOUNCE_MS);
+        debounceTimer = setTimeout(hookReplyButtons, 600);
       });
 
       observer.observe(document.body, {
@@ -336,41 +246,37 @@
     }
   }
 
-  // ─── Fallback: Periodic Scan ───────────────────────────────
+  // ─── Fallback Scanner ─────────────────────────────────────
   function setupFallbackScan() {
     setInterval(function () {
-      try { injectButtons(); } catch (e) { /* silent */ }
+      try { hookReplyButtons(); } catch (e) { /* silent */ }
     }, SCAN_INTERVAL_MS);
-    console.log('[X-Commentator] Fallback scanner active (every ' + SCAN_INTERVAL_MS + 'ms).');
   }
 
   // ─── Initialize ────────────────────────────────────────────
   function init() {
-    console.log('[X-Commentator] Initializing on: ' + window.location.href);
+    console.log('[X-Commentator] Initializing on:', window.location.href);
 
+    // Check API key
     try {
       chrome.runtime.sendMessage({ action: 'getSettings' }, function (response) {
-        if (chrome.runtime.lastError) {
-          console.warn('[X-Commentator] Settings check:', chrome.runtime.lastError.message);
-          return;
-        }
+        if (chrome.runtime.lastError) return;
         if (response && response.success && !response.settings.apiKey) {
-          showToast('X-Commentator: Set your Groq API key in extension settings.', 'info');
+          showToast('⚙️ X-Commentator: Set your Groq API key in extension settings.', 'info');
         }
       });
-    } catch (e) {
-      console.warn('[X-Commentator] Settings check skipped:', e.message);
-    }
+    } catch (e) { /* skip */ }
 
-    injectButtons();
-    setTimeout(injectButtons, 1500);
-    setTimeout(injectButtons, 3000);
-    setTimeout(injectButtons, 5000);
+    // Hook reply buttons
+    hookReplyButtons();
+    setTimeout(hookReplyButtons, 2000);
+    setTimeout(hookReplyButtons, 4000);
 
+    // Watch for new tweets / SPA navigation
     setupObserver();
     setupFallbackScan();
 
-    console.log('[X-Commentator] ✨ All systems active!');
+    console.log('[X-Commentator] ✨ Ready! Click any reply button to auto-generate AI comments.');
   }
 
   if (document.readyState === 'loading') {

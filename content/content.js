@@ -4,7 +4,7 @@
  * FLOW: User clicks X's native reply/comment button (💬) on any tweet
  *       → X opens its reply box
  *       → Extension detects it, reads the tweet, generates AI comment
- *       → Auto-types the comment into X's reply textbox
+ *       → Auto-types the comment into X's reply textbox ONLY
  *       → User just clicks "Reply" to post
  */
 
@@ -17,6 +17,9 @@
   const TOAST_CLASS = 'xcai-toast';
   const SCAN_INTERVAL_MS = 1500;
   const PROCESSED_REPLY_ATTR = 'data-xcai-reply-hooked';
+
+  // ─── Prevent double generation ─────────────────────────────
+  var isGenerating = false;
 
   // ─── Toast Notification ────────────────────────────────────
   function showToast(message, type) {
@@ -36,7 +39,7 @@
       setTimeout(function () {
         toast.classList.remove('xcai-toast-visible');
         setTimeout(function () { toast.remove(); }, 300);
-      }, 3500);
+      }, 4000);
     } catch (e) {
       console.error('[X-Commentator] Toast error:', e);
     }
@@ -75,61 +78,73 @@
     }
   }
 
-  // ─── Extract tweet text from reply dialog ──────────────────
-  function extractTweetTextFromReplyDialog() {
-    try {
-      // In X's reply dialog, the original tweet is shown above the reply box
-      // Look for tweet text inside the dialog/modal
-      var dialog = document.querySelector('[role="dialog"]');
-      if (dialog) {
-        var tweetTextEl = dialog.querySelector('[data-testid="tweetText"]');
-        if (tweetTextEl) {
-          return tweetTextEl.textContent.trim();
-        }
-      }
-
-      // Fallback: if we're on a tweet detail page, find the main tweet
-      var mainTweet = document.querySelector('article[data-testid="tweet"]');
-      if (mainTweet) {
-        return extractTweetText(mainTweet);
-      }
-
-      return null;
-    } catch (e) {
-      console.error('[X-Commentator] Error extracting from dialog:', e);
-      return null;
+  // ─── Find the reply textbox inside X's reply dialog ────────
+  function findReplyTextbox() {
+    // Strategy 1: Find textbox inside the reply dialog/modal
+    var dialog = document.querySelector('[role="dialog"]');
+    if (dialog) {
+      var box = dialog.querySelector('div[role="textbox"][contenteditable="true"]');
+      if (box) return box;
+      // Try the draft editor
+      box = dialog.querySelector('[data-testid="tweetTextarea_0"] div[contenteditable="true"]');
+      if (box) return box;
+      box = dialog.querySelector('[contenteditable="true"]');
+      if (box) return box;
     }
+
+    // Strategy 2: Find the inline reply textbox (when replying inline, no dialog)
+    var replySection = document.querySelector('[data-testid="inline_reply_offscreen"]');
+    if (replySection) {
+      var box = replySection.querySelector('div[role="textbox"][contenteditable="true"]');
+      if (box) return box;
+    }
+
+    // Strategy 3: Find any visible reply textbox on the page
+    var allBoxes = document.querySelectorAll('div[role="textbox"][contenteditable="true"]');
+    for (var i = 0; i < allBoxes.length; i++) {
+      var rect = allBoxes[i].getBoundingClientRect();
+      // Only pick visible ones (has height and is in viewport)
+      if (rect.height > 0 && rect.top >= 0 && rect.top < window.innerHeight) {
+        return allBoxes[i];
+      }
+    }
+
+    return null;
   }
 
-  // ─── Type text into reply box ──────────────────────────────
+  // ─── Type text into reply box (SAFE - single target) ───────
   function typeIntoReplyBox(text) {
     try {
-      // Find the reply textbox — try multiple selectors
-      var replyBox = document.querySelector('[data-testid="tweetTextarea_0"]') ||
-                     document.querySelector('div[role="textbox"][contenteditable="true"]') ||
-                     document.querySelector('[contenteditable="true"][data-testid]') ||
-                     document.querySelector('.public-DraftEditor-content[contenteditable="true"]');
+      var replyBox = findReplyTextbox();
 
       if (!replyBox) {
-        console.log('[X-Commentator] Reply box not found yet, retrying...');
+        console.log('[X-Commentator] Reply textbox not found yet...');
         return false;
       }
 
-      // Focus the reply box
-      replyBox.focus();
+      // Ensure we're clicking INTO the textbox to give it proper focus
+      replyBox.click();
 
-      // Clear any existing content first
-      // Use Selection API to select all, then replace
-      var selection = window.getSelection();
-      var range = document.createRange();
-      range.selectNodeContents(replyBox);
-      selection.removeAllRanges();
-      selection.addRange(range);
+      // Small delay to let X's React handle the click
+      setTimeout(function () {
+        // Focus the textbox
+        replyBox.focus();
 
-      // Use insertText to type naturally (triggers React's change detection)
-      document.execCommand('insertText', false, text);
+        // Move cursor to end / select all existing content
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        var range = document.createRange();
+        range.selectNodeContents(replyBox);
+        range.collapse(false); // collapse to end
+        sel.addRange(range);
 
-      console.log('[X-Commentator] Comment typed into reply box!');
+        // Insert text using execCommand (works with React/contenteditable)
+        document.execCommand('insertText', false, text);
+
+        console.log('[X-Commentator] ✅ Comment typed into reply box!');
+        showToast('✅ AI comment ready! Click Reply to post.', 'success');
+      }, 100);
+
       return true;
     } catch (e) {
       console.error('[X-Commentator] Error typing into reply box:', e);
@@ -144,6 +159,13 @@
       return;
     }
 
+    if (isGenerating) {
+      console.log('[X-Commentator] Already generating, skipping...');
+      return;
+    }
+
+    isGenerating = true;
+
     console.log('[X-Commentator] Generating comment for:', tweetText.substring(0, 80) + '...');
     showToast('✨ Generating AI comment...', 'info');
 
@@ -152,6 +174,8 @@
         action: 'generateComment',
         tweetText: tweetText
       }, function (response) {
+        isGenerating = false;
+
         if (chrome.runtime.lastError) {
           console.error('[X-Commentator] Runtime error:', chrome.runtime.lastError);
           showToast('Extension error. Reload the page.', 'error');
@@ -162,29 +186,39 @@
           var comment = response.comment;
           console.log('[X-Commentator] Comment generated:', comment);
 
-          // Try to type into reply box with retries (reply box may take time to appear)
-          var attempts = 0;
-          var maxAttempts = 10;
-          var retryInterval = setInterval(function () {
-            attempts++;
+          // Try to type with a few retries (reply box may need time to render)
+          var typed = false;
+          var attempt = 0;
+          var maxAttempts = 8;
+
+          var tryType = function () {
+            if (typed || attempt >= maxAttempts) {
+              if (!typed) {
+                // All retries failed — copy to clipboard as fallback
+                navigator.clipboard.writeText(comment).then(function () {
+                  showToast('📋 Comment copied! Paste with Ctrl+V.', 'info');
+                });
+              }
+              return;
+            }
+            attempt++;
             var success = typeIntoReplyBox(comment);
             if (success) {
-              clearInterval(retryInterval);
-              showToast('✅ AI comment ready! Click Reply to post.', 'success');
-            } else if (attempts >= maxAttempts) {
-              clearInterval(retryInterval);
-              // Fallback: copy to clipboard
-              navigator.clipboard.writeText(comment).then(function () {
-                showToast('📋 Comment copied! Paste into reply box.', 'info');
-              });
+              typed = true;
+            } else {
+              setTimeout(tryType, 400);
             }
-          }, 300);
+          };
+
+          tryType();
+
         } else {
           var errMsg = (response && response.error) ? response.error : 'Failed to generate.';
           showToast('❌ ' + errMsg, 'error');
         }
       });
     } catch (e) {
+      isGenerating = false;
       console.error('[X-Commentator] Error:', e);
       showToast('Extension error: ' + e.message, 'error');
     }
@@ -207,19 +241,19 @@
           var tweetArticle = btn.closest('article[data-testid="tweet"]') || btn.closest('article');
           if (!tweetArticle) return;
 
-          // Extract the tweet text NOW (before the dialog opens and DOM changes)
+          // Extract the tweet text NOW (before the dialog opens)
           var tweetText = extractTweetText(tweetArticle);
           if (!tweetText) return;
 
           lastClickedTweetText = tweetText;
-          console.log('[X-Commentator] Reply button clicked. Tweet:', tweetText.substring(0, 60) + '...');
+          console.log('[X-Commentator] Reply clicked. Tweet:', tweetText.substring(0, 60) + '...');
 
-          // Wait for reply box to appear, then generate and type
+          // Wait for X's reply box to appear, then generate
           setTimeout(function () {
             generateAndType(lastClickedTweetText);
-          }, 800);
+          }, 1000);
 
-        }, false); // Use bubble phase so X's handler runs first (opens the reply box)
+        }, false);
       });
     } catch (e) {
       console.error('[X-Commentator] Error hooking reply buttons:', e);
@@ -257,7 +291,6 @@
   function init() {
     console.log('[X-Commentator] Initializing on:', window.location.href);
 
-    // Check API key
     try {
       chrome.runtime.sendMessage({ action: 'getSettings' }, function (response) {
         if (chrome.runtime.lastError) return;
@@ -267,12 +300,10 @@
       });
     } catch (e) { /* skip */ }
 
-    // Hook reply buttons
     hookReplyButtons();
     setTimeout(hookReplyButtons, 2000);
     setTimeout(hookReplyButtons, 4000);
 
-    // Watch for new tweets / SPA navigation
     setupObserver();
     setupFallbackScan();
 

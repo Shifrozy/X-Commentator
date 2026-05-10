@@ -2,10 +2,11 @@
  * X-Commentator AI - Content Script
  * 
  * FLOW: User clicks X's native reply/comment button (💬)
- *       → Extension reads tweet, generates AI comment via Groq
- *       → Copies comment to clipboard
- *       → Shows comment in bottom toast notification
- *       → Auto-pastes into reply box (or user presses Ctrl+V)
+ *       → Extension clicks "Show more" to expand full post
+ *       → Reads full tweet text + poster's name
+ *       → Generates AI comment mentioning poster's first name
+ *       → Shows comment in bottom toast card
+ *       → Auto-pastes into reply textbox
  */
 
 (function () {
@@ -13,15 +14,12 @@
 
   console.log('[X-Commentator] Content script starting...');
 
-  // ─── Constants ─────────────────────────────────────────────
   const TOAST_CLASS = 'xcai-toast';
   const SCAN_INTERVAL_MS = 1500;
   const PROCESSED_REPLY_ATTR = 'data-xcai-reply-hooked';
-
-  // ─── Guard against double execution ────────────────────────
   var currentGenerationId = 0;
 
-  // ─── Toast Notification (shows at bottom) ──────────────────
+  // ─── Toast Notification ────────────────────────────────────
   function showToast(message, type, duration) {
     try {
       type = type || 'info';
@@ -41,12 +39,10 @@
         toast.classList.remove('xcai-toast-visible');
         setTimeout(function () { toast.remove(); }, 300);
       }, duration);
-    } catch (e) {
-      console.error('[X-Commentator] Toast error:', e);
-    }
+    } catch (e) {}
   }
 
-  // ─── Comment Toast (shows the actual comment at bottom) ────
+  // ─── Comment Toast Card (bottom) ───────────────────────────
   function showCommentToast(comment) {
     try {
       document.querySelectorAll('.' + TOAST_CLASS).forEach(function (t) { t.remove(); });
@@ -57,7 +53,7 @@
 
       var header = document.createElement('div');
       header.className = 'xcai-ct-header';
-      header.textContent = '✅ AI Comment Generated — Copied!';
+      header.textContent = '✅ AI Comment Generated & Pasted!';
 
       var body = document.createElement('div');
       body.className = 'xcai-ct-body';
@@ -65,7 +61,7 @@
 
       var footer = document.createElement('div');
       footer.className = 'xcai-ct-footer';
-      footer.textContent = 'Press Ctrl+V in reply box to paste';
+      footer.textContent = 'Comment auto-pasted into reply box. Click Reply to post!';
 
       var closeBtn = document.createElement('button');
       closeBtn.className = 'xcai-ct-close';
@@ -82,17 +78,72 @@
         toast.classList.add('xcai-comment-toast-visible');
       });
 
-      // Auto-hide after 15 seconds
       setTimeout(function () {
         toast.classList.remove('xcai-comment-toast-visible');
         setTimeout(function () { toast.remove(); }, 300);
-      }, 15000);
+      }, 12000);
+    } catch (e) {}
+  }
+
+  // ─── Click "Show more" to expand full post ─────────────────
+  function expandFullPost(tweetArticle) {
+    try {
+      // Find "Show more" link/button inside the tweet
+      var showMoreLinks = tweetArticle.querySelectorAll('[data-testid="tweet-text-show-more-link"], span');
+      showMoreLinks.forEach(function (el) {
+        if (el.textContent.trim().toLowerCase() === 'show more') {
+          el.click();
+          console.log('[X-Commentator] Clicked "Show more" to expand post.');
+        }
+      });
+    } catch (e) {}
+  }
+
+  // ─── Extract poster's display name (first name) ────────────
+  function extractPosterName(tweetArticle) {
+    try {
+      // The display name is usually in a span inside a link at the top of the tweet
+      // Try data-testid="User-Name" first
+      var userNameBlock = tweetArticle.querySelector('[data-testid="User-Name"]');
+      if (userNameBlock) {
+        // Get the first link text (display name, not @handle)
+        var nameLink = userNameBlock.querySelector('a span');
+        if (nameLink) {
+          var fullName = nameLink.textContent.trim();
+          // Get first name only (before space)
+          var firstName = fullName.split(' ')[0];
+          // Remove any emojis or special chars from the start
+          firstName = firstName.replace(/[^\w\s]/g, '').trim();
+          if (firstName.length > 0) {
+            return firstName;
+          }
+          return fullName.split(' ')[0];
+        }
+      }
+
+      // Fallback: look for the display name in the article header
+      var allLinks = tweetArticle.querySelectorAll('a[role="link"]');
+      for (var i = 0; i < allLinks.length; i++) {
+        var href = allLinks[i].getAttribute('href');
+        if (href && href.startsWith('/') && !href.includes('/status/')) {
+          var spans = allLinks[i].querySelectorAll('span');
+          for (var j = 0; j < spans.length; j++) {
+            var text = spans[j].textContent.trim();
+            if (text && !text.startsWith('@') && text.length > 1 && text.length < 50) {
+              return text.split(' ')[0].replace(/[^\w\s]/g, '').trim() || text.split(' ')[0];
+            }
+          }
+        }
+      }
+
+      return null;
     } catch (e) {
-      console.error('[X-Commentator] Comment toast error:', e);
+      console.error('[X-Commentator] Error extracting name:', e);
+      return null;
     }
   }
 
-  // ─── Extract Tweet Text from article ───────────────────────
+  // ─── Extract Full Tweet Text ───────────────────────────────
   function extractTweetText(tweetArticle) {
     try {
       var tweetTextEl = tweetArticle.querySelector('[data-testid="tweetText"]');
@@ -120,53 +171,84 @@
 
       return text.trim();
     } catch (e) {
-      console.error('[X-Commentator] Error extracting tweet text:', e);
       return null;
     }
   }
 
-  // ─── Find the reply textbox ────────────────────────────────
+  // ─── Find Reply Textbox (inside dialog or inline) ──────────
   function findReplyTextbox() {
+    // Priority 1: Inside dialog modal
+    var dialog = document.querySelector('[role="dialog"]');
+    if (dialog) {
+      var box = dialog.querySelector('div[role="textbox"][contenteditable="true"]');
+      if (box) return box;
+      box = dialog.querySelector('[contenteditable="true"]');
+      if (box) return box;
+    }
+
+    // Priority 2: Last visible textbox on page
     var allBoxes = document.querySelectorAll('div[role="textbox"][contenteditable="true"]');
     var visibleBoxes = [];
-
     for (var i = 0; i < allBoxes.length; i++) {
       var rect = allBoxes[i].getBoundingClientRect();
       if (rect.height > 0 && rect.width > 0) {
         visibleBoxes.push(allBoxes[i]);
       }
     }
-
     if (visibleBoxes.length === 0) return null;
     return visibleBoxes[visibleBoxes.length - 1];
   }
 
-  // ─── Paste into reply box via keyboard simulation ──────────
-  function pasteIntoReplyBox() {
+  // ─── Auto-paste into reply box ─────────────────────────────
+  function autoPasteIntoReplyBox(text) {
     try {
       var replyBox = findReplyTextbox();
-      if (!replyBox) return;
+      if (!replyBox) {
+        console.log('[X-Commentator] Reply box not found for auto-paste.');
+        return;
+      }
 
-      // Focus the reply box
-      replyBox.focus();
-
-      // Try to simulate Ctrl+V paste
-      var pasteEvent = new KeyboardEvent('keydown', {
-        key: 'v',
-        code: 'KeyV',
-        ctrlKey: true,
-        bubbles: true,
-        cancelable: true
+      // Blur ALL other contenteditable elements first
+      var allEditable = document.querySelectorAll('[contenteditable="true"]');
+      allEditable.forEach(function (el) {
+        if (el !== replyBox) {
+          try { el.blur(); } catch (e) {}
+        }
       });
-      replyBox.dispatchEvent(pasteEvent);
+
+      // Focus ONLY the reply box
+      replyBox.focus();
+      replyBox.click();
+
+      // Small delay for focus to settle
+      setTimeout(function () {
+        replyBox.focus();
+
+        // Place cursor at end
+        var sel = window.getSelection();
+        sel.removeAllRanges();
+        var range = document.createRange();
+        range.selectNodeContents(replyBox);
+        range.collapse(false);
+        sel.addRange(range);
+
+        // Try insertText
+        var result = document.execCommand('insertText', false, text);
+
+        if (result) {
+          console.log('[X-Commentator] ✅ Auto-pasted into reply box!');
+        } else {
+          console.log('[X-Commentator] execCommand returned false, text may not have pasted.');
+        }
+      }, 200);
+
     } catch (e) {
-      // Auto-paste may not work, user will Ctrl+V manually
-      console.log('[X-Commentator] Auto-paste not available, user will paste manually.');
+      console.error('[X-Commentator] Auto-paste error:', e);
     }
   }
 
   // ─── Generate AI Comment ───────────────────────────────────
-  function generateAndType(tweetText) {
+  function generateAndType(tweetText, posterName) {
     if (!tweetText) {
       showToast('Could not read tweet text.', 'error');
       return;
@@ -175,38 +257,36 @@
     currentGenerationId++;
     var myGenId = currentGenerationId;
 
-    console.log('[X-Commentator] Generating comment (gen #' + myGenId + ')...');
+    console.log('[X-Commentator] Generating (gen #' + myGenId + ') for @' + (posterName || 'unknown') + '...');
     showToast('✨ Generating AI comment...', 'info');
 
     try {
       chrome.runtime.sendMessage({
         action: 'generateComment',
-        tweetText: tweetText
+        tweetText: tweetText,
+        posterName: posterName || ''
       }, function (response) {
         if (myGenId !== currentGenerationId) return;
 
         if (chrome.runtime.lastError) {
-          console.error('[X-Commentator] Runtime error:', chrome.runtime.lastError);
           showToast('Extension error. Reload the page.', 'error');
           return;
         }
 
         if (response && response.success) {
           var comment = response.comment;
-          console.log('[X-Commentator] Comment generated:', comment.substring(0, 60) + '...');
+          console.log('[X-Commentator] Comment:', comment);
 
-          // Step 1: Copy comment to clipboard
+          // Step 1: Copy to clipboard
           navigator.clipboard.writeText(comment).then(function () {
-            // Step 2: Show comment in bottom toast
+            // Step 2: Show in bottom toast card
             showCommentToast(comment);
 
-            // Step 3: Try auto-paste (may not work due to browser security)
+            // Step 3: Auto-paste into reply box
             setTimeout(function () {
-              pasteIntoReplyBox();
-            }, 300);
-
+              autoPasteIntoReplyBox(comment);
+            }, 400);
           }).catch(function () {
-            // Clipboard failed, just show in toast
             showCommentToast(comment);
           });
 
@@ -216,8 +296,7 @@
         }
       });
     } catch (e) {
-      console.error('[X-Commentator] Error:', e);
-      showToast('Extension error: ' + e.message, 'error');
+      showToast('Extension error.', 'error');
     }
   }
 
@@ -234,19 +313,26 @@
           var tweetArticle = btn.closest('article[data-testid="tweet"]') || btn.closest('article');
           if (!tweetArticle) return;
 
-          var tweetText = extractTweetText(tweetArticle);
-          if (!tweetText) return;
+          // Step 1: Click "Show more" to expand full post
+          expandFullPost(tweetArticle);
 
-          console.log('[X-Commentator] Reply clicked. Tweet:', tweetText.substring(0, 60) + '...');
-
+          // Step 2: Small delay for expansion, then extract
           setTimeout(function () {
-            generateAndType(tweetText);
-          }, 1200);
+            var tweetText = extractTweetText(tweetArticle);
+            var posterName = extractPosterName(tweetArticle);
+            if (!tweetText) return;
+
+            console.log('[X-Commentator] Tweet by ' + (posterName || '?') + ': ' + tweetText.substring(0, 60) + '...');
+
+            // Step 3: Wait for reply box to appear, then generate
+            setTimeout(function () {
+              generateAndType(tweetText, posterName);
+            }, 800);
+          }, 500);
+
         }, false);
       });
-    } catch (e) {
-      console.error('[X-Commentator] Error hooking reply buttons:', e);
-    }
+    } catch (e) {}
   }
 
   // ─── Mutation Observer ─────────────────────────────────────
@@ -257,17 +343,14 @@
         if (debounceTimer) clearTimeout(debounceTimer);
         debounceTimer = setTimeout(hookReplyButtons, 600);
       });
-
       observer.observe(document.body, { childList: true, subtree: true });
-    } catch (e) {
-      console.error('[X-Commentator] Observer error:', e);
-    }
+    } catch (e) {}
   }
 
   // ─── Fallback Scanner ─────────────────────────────────────
   function setupFallbackScan() {
     setInterval(function () {
-      try { hookReplyButtons(); } catch (e) { /* silent */ }
+      try { hookReplyButtons(); } catch (e) {}
     }, SCAN_INTERVAL_MS);
   }
 
@@ -282,7 +365,7 @@
           showToast('⚙️ Set your Groq API key in X-Commentator settings.', 'info');
         }
       });
-    } catch (e) { /* skip */ }
+    } catch (e) {}
 
     hookReplyButtons();
     setTimeout(hookReplyButtons, 2000);

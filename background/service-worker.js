@@ -28,7 +28,7 @@ async function getSettings() {
 /**
  * Build the system prompt based on user settings
  */
-function buildSystemPrompt(settings) {
+function buildSystemPrompt(settings, posterName) {
   const toneDescriptions = {
     friendly: 'warm, friendly, and approachable. Use casual language and show genuine interest.',
     professional: 'polished, professional, and insightful. Use proper grammar and add value to the conversation.',
@@ -44,6 +44,10 @@ function buildSystemPrompt(settings) {
                settings.language === 'arabic' ? 'Arabic' :
                'English';
 
+  const nameRule = posterName 
+    ? `\n10. IMPORTANT: Naturally mention the poster's first name "${posterName}" in your comment — like you're talking directly to them. Use it casually (e.g., "${posterName}, this is..." or "...right ${posterName}?" or "yo ${posterName}..."). Do NOT force it if it feels unnatural.`
+    : '';
+
   let prompt = `You are an expert social media commenter for X (Twitter). Your job is to generate a single, highly relevant comment/reply for a given tweet/post.
 
 RULES:
@@ -55,10 +59,10 @@ RULES:
 6. DO NOT start with "Great post!" or similar generic openings.
 7. Reference specific details from the tweet to show genuine engagement.
 8. Match the energy of the original post.
-9. Output ONLY the comment text — no quotes, no labels, no explanation.`;
+9. Output ONLY the comment text — no quotes, no labels, no explanation.${nameRule}`;
 
   if (settings.customPrompt) {
-    prompt += `\n10. Additional instructions: ${settings.customPrompt}`;
+    prompt += `\n11. Additional instructions: ${settings.customPrompt}`;
   }
 
   return prompt;
@@ -67,12 +71,12 @@ RULES:
 /**
  * Call Groq API to generate a comment
  */
-async function generateComment(tweetText, settings) {
+async function generateComment(tweetText, settings, posterName) {
   if (!settings.apiKey) {
     throw new Error('API key not set. Please add your Groq API key in the extension settings.');
   }
 
-  const systemPrompt = buildSystemPrompt(settings);
+  const systemPrompt = buildSystemPrompt(settings, posterName);
 
   const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
     method: 'POST',
@@ -84,7 +88,7 @@ async function generateComment(tweetText, settings) {
       model: settings.model,
       messages: [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Generate a comment for this tweet:\n\n"${tweetText}"` }
+        { role: 'user', content: `Generate a comment for this tweet${posterName ? ` by ${posterName}` : ''}:\n\n"${tweetText}"` }
       ],
       max_tokens: settings.maxTokens,
       temperature: settings.temperature,
@@ -123,7 +127,7 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     (async () => {
       try {
         const settings = await getSettings();
-        const comment = await generateComment(request.tweetText, settings);
+        const comment = await generateComment(request.tweetText, settings, request.posterName || '');
         sendResponse({ success: true, comment });
       } catch (error) {
         sendResponse({ success: false, error: error.message });

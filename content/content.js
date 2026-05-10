@@ -199,7 +199,7 @@
     return visibleBoxes[visibleBoxes.length - 1];
   }
 
-  // ─── Auto-paste into reply box ─────────────────────────────
+  // ─── Auto-paste into reply box via ClipboardEvent ───────────
   function autoPasteIntoReplyBox(text) {
     try {
       var replyBox = findReplyTextbox();
@@ -220,7 +220,6 @@
       replyBox.focus();
       replyBox.click();
 
-      // Small delay for focus to settle
       setTimeout(function () {
         replyBox.focus();
 
@@ -232,13 +231,35 @@
         range.collapse(false);
         sel.addRange(range);
 
-        // Try insertText
-        var result = document.execCommand('insertText', false, text);
+        // Use synthetic ClipboardEvent paste (X's editor handles paste natively = single insert)
+        try {
+          var clipboardData = new DataTransfer();
+          clipboardData.setData('text/plain', text);
 
-        if (result) {
-          console.log('[X-Commentator] ✅ Auto-pasted into reply box!');
-        } else {
-          console.log('[X-Commentator] execCommand returned false, text may not have pasted.');
+          var pasteEvent = new ClipboardEvent('paste', {
+            bubbles: true,
+            cancelable: true,
+            clipboardData: clipboardData
+          });
+
+          var handled = replyBox.dispatchEvent(pasteEvent);
+          console.log('[X-Commentator] Paste event dispatched, handled:', handled);
+        } catch (pasteErr) {
+          console.log('[X-Commentator] ClipboardEvent paste failed:', pasteErr.message);
+          // Fallback: try InputEvent
+          try {
+            var inputEvent = new InputEvent('beforeinput', {
+              inputType: 'insertFromPaste',
+              data: text,
+              bubbles: true,
+              cancelable: true,
+              composed: true
+            });
+            replyBox.dispatchEvent(inputEvent);
+            console.log('[X-Commentator] InputEvent fallback dispatched.');
+          } catch (inputErr) {
+            console.log('[X-Commentator] All auto-paste methods failed. Use Ctrl+V.');
+          }
         }
       }, 200);
 

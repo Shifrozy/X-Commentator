@@ -28,7 +28,7 @@ const DEFAULT_SETTINGS = {
   tone: 'friendly',
   language: 'english',
   customPrompt: '',
-  maxTokens: 280,
+  maxTokens: 60, // ~180-220 characters, perfectly fits X limit
   temperature: 0.8
 };
 
@@ -73,39 +73,41 @@ async function getSettings() {
  */
 function buildSystemPrompt(settings, posterName) {
   const toneDescriptions = {
-    friendly: 'warm, friendly, and approachable. Use casual language and show genuine interest.',
-    professional: 'polished, professional, and insightful. Use proper grammar and add value to the conversation.',
-    funny: 'witty, humorous, and entertaining. Use clever wordplay and light humor without being offensive.',
-    supportive: 'encouraging, supportive, and empathetic. Validate the poster\'s efforts and offer positive reinforcement.',
-    savage: 'bold, edgy, and sarcastic with sharp wit. Be playfully roasting but never cross into genuinely hurtful territory.',
-    intellectual: 'thoughtful, analytical, and well-informed. Add depth to the discussion with references and nuanced perspectives.'
+    friendly: 'warm, friendly, and approachable. Casual and genuinely interested.',
+    professional: 'polished, sharp, and insightful. Value-adding perspective.',
+    funny: 'witty, hilarious, and punchy. Clever humor and playful banter.',
+    supportive: 'encouraging, hyped, and empathetic. High energy positivity.',
+    savage: 'bold, edgy, playful roast with sharp wit. Never truly hateful.',
+    intellectual: 'smart, analytical, and thoughtful perspective in few words.'
   };
 
   const toneGuide = toneDescriptions[settings.tone] || toneDescriptions.friendly;
-  const lang = settings.language === 'urdu' ? 'Urdu (Roman/transliterated)' :
-               settings.language === 'hindi' ? 'Hindi (Roman/transliterated)' :
+  const lang = settings.language === 'urdu' ? 'Urdu (Roman/transliterated words like "bhai, kya baat hai")' :
+               settings.language === 'hindi' ? 'Hindi (Roman/transliterated words like "kya baat hai yaar")' :
                settings.language === 'arabic' ? 'Arabic' :
                'English';
 
-  const nameRule = posterName 
-    ? `\n10. IMPORTANT: Naturally mention the poster's first name "${posterName}" in your comment — like you're talking directly to them. Use it casually (e.g., "${posterName}, this is..." or "...right ${posterName}?" or "yo ${posterName}..."). Do NOT force it if it feels unnatural.`
+  const authorName = posterName ? posterName.trim() : '';
+  const nameRule = authorName 
+    ? `\n9. MANDATORY AUTHOR MENTION: You MUST mention and speak directly to "${authorName}" in your reply (e.g. "${authorName}, ...", "Hey ${authorName}, ...", or "...right ${authorName}?"). Mentioning their name is strictly required.`
     : '';
 
-  let prompt = `You are an expert social media commenter for X (Twitter). Your job is to generate a single, highly relevant comment/reply for a given tweet/post.
+  let prompt = `You are a top-tier Twitter/X commenter. Your task is to generate ONE single, highly relevant, human-like reply for the post.
 
-RULES:
-1. Your tone should be: ${toneGuide}
-2. Respond in: ${lang}
-3. Keep the comment concise — ideally under 280 characters (1-2 sentences max).
-4. Make the comment feel NATURAL and HUMAN — never robotic or generic.
-5. DO NOT use hashtags unless the original post has them.
-6. DO NOT start with "Great post!" or similar generic openings.
-7. Reference specific details from the tweet to show genuine engagement.
-8. Match the energy of the original post.
-9. Output ONLY the comment text — no quotes, no labels, no explanation.${nameRule}`;
+CRITICAL RULES:
+1. Tone: ${toneGuide}
+2. Language: Respond in ${lang}.
+3. STRICT CHARACTER LIMIT (TWITTER 280 MAX):
+   - Your reply MUST be short and punchy: between 80 to 180 characters (15 to 30 words max, 1-2 short sentences).
+   - NEVER write long paragraphs or essays.
+   - ABSOLUTELY NEVER exceed 250 characters!
+4. Media Awareness: If the post includes attached photos, video clips, link previews, or image alt text, react contextually to what the media and post are about.
+5. Sound Human: Sound like an active real person on X. NO robotic clichés, NO "Great post!", NO "Thanks for sharing!".
+6. NO hashtags unless the post explicitly demands one.
+7. Output ONLY the raw reply text — no quotes, no labels, no preamble.${nameRule}`;
 
   if (settings.customPrompt) {
-    prompt += `\n11. Additional instructions: ${settings.customPrompt}`;
+    prompt += `\n10. Additional instructions: ${settings.customPrompt}`;
   }
 
   return prompt;
@@ -129,15 +131,19 @@ async function generateComment(tweetText, settings, posterName) {
     chrome.storage.sync.set({ model: FALLBACK_MODEL });
   }
 
-  const systemPrompt = buildSystemPrompt(settings, posterName);
+  const authorName = posterName ? posterName.trim() : '';
+  const systemPrompt = buildSystemPrompt(settings, authorName);
+
+  // Enforce a strict token ceiling (max ~75 tokens = ~240 chars)
+  const maxTokensToUse = Math.min(settings.maxTokens || 60, 75);
 
   const payload = {
     model: model,
     messages: [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Generate a comment for this tweet${posterName ? ` by ${posterName}` : ''}:\n\n"${tweetText}"` }
+      { role: 'user', content: `Generate a short reply (under 180 characters)${authorName ? ` addressing ${authorName}` : ''} for this post:\n\n${tweetText}` }
     ],
-    max_completion_tokens: settings.maxTokens || 280,
+    max_completion_tokens: maxTokensToUse,
     temperature: typeof settings.temperature === 'number' ? settings.temperature : 0.8,
     top_p: 0.9,
     stream: false
@@ -183,7 +189,7 @@ async function generateComment(tweetText, settings, posterName) {
     // Fallback: If max_completion_tokens is unsupported by an older endpoint, try max_tokens
     if (!response.ok && /max_completion_tokens/i.test(errorMsg)) {
       delete payload.max_completion_tokens;
-      payload.max_tokens = settings.maxTokens || 280;
+      payload.max_tokens = maxTokensToUse;
       response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
         method: 'POST',
         headers: {
@@ -217,7 +223,30 @@ async function generateComment(tweetText, settings, posterName) {
   comment = comment.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
   // Clean up: remove surrounding quotes if present
-  return comment.replace(/^["']|["']$/g, '');
+  comment = comment.replace(/^["']|["']$/g, '').trim();
+
+  // Guarantee: If author name was provided and missing from response, prepend it naturally
+  if (authorName && !comment.toLowerCase().includes(authorName.toLowerCase())) {
+    comment = `${authorName}, ${comment.charAt(0).toLowerCase() + comment.slice(1)}`;
+  }
+
+  // Strict Hard Cutoff: Ensure comment NEVER exceeds Twitter limit (max 270 chars)
+  if (comment.length > 270) {
+    let trimmed = comment.substring(0, 265);
+    const lastPunct = Math.max(trimmed.lastIndexOf('.'), trimmed.lastIndexOf('!'), trimmed.lastIndexOf('?'));
+    if (lastPunct > 80) {
+      comment = trimmed.substring(0, lastPunct + 1);
+    } else {
+      const lastSpace = trimmed.lastIndexOf(' ');
+      if (lastSpace > 80) {
+        comment = trimmed.substring(0, lastSpace);
+      } else {
+        comment = trimmed;
+      }
+    }
+  }
+
+  return comment;
 }
 
 /**

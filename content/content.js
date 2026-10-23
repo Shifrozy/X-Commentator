@@ -99,79 +99,164 @@
     } catch (e) {}
   }
 
-  // ─── Extract poster's display name (first name) ────────────
+  // ─── Extract poster's display name or handle ────────────────
   function extractPosterName(tweetArticle) {
     try {
-      // The display name is usually in a span inside a link at the top of the tweet
-      // Try data-testid="User-Name" first
-      var userNameBlock = tweetArticle.querySelector('[data-testid="User-Name"]');
-      if (userNameBlock) {
-        // Get the first link text (display name, not @handle)
-        var nameLink = userNameBlock.querySelector('a span');
-        if (nameLink) {
-          var fullName = nameLink.textContent.trim();
-          // Get first name only (before space)
-          var firstName = fullName.split(' ')[0];
-          // Remove any emojis or special chars from the start
-          firstName = firstName.replace(/[^\w\s]/g, '').trim();
-          if (firstName.length > 0) {
-            return firstName;
-          }
-          return fullName.split(' ')[0];
+      // 1. Try User-Name block in the tweet article
+      var userNameBlock = tweetArticle ? tweetArticle.querySelector('[data-testid="User-Name"]') : null;
+      if (!userNameBlock) {
+        // Fallback: check active modal dialog
+        var dialog = document.querySelector('[role="dialog"]');
+        if (dialog) {
+          userNameBlock = dialog.querySelector('[data-testid="User-Name"]');
         }
       }
 
-      // Fallback: look for the display name in the article header
-      var allLinks = tweetArticle.querySelectorAll('a[role="link"]');
-      for (var i = 0; i < allLinks.length; i++) {
-        var href = allLinks[i].getAttribute('href');
-        if (href && href.startsWith('/') && !href.includes('/status/')) {
-          var spans = allLinks[i].querySelectorAll('span');
-          for (var j = 0; j < spans.length; j++) {
-            var text = spans[j].textContent.trim();
-            if (text && !text.startsWith('@') && text.length > 1 && text.length < 50) {
-              return text.split(' ')[0].replace(/[^\w\s]/g, '').trim() || text.split(' ')[0];
-            }
+      if (userNameBlock) {
+        // Find display name inside the first link
+        var nameLink = userNameBlock.querySelector('a span');
+        var fullName = nameLink ? nameLink.textContent.trim() : '';
+
+        // Find @handle
+        var allSpans = userNameBlock.querySelectorAll('span');
+        var handle = '';
+        for (var i = 0; i < allSpans.length; i++) {
+          var t = allSpans[i].textContent.trim();
+          if (t.startsWith('@') && t.length > 1) {
+            handle = t;
+            break;
+          }
+        }
+
+        // Clean name of emojis, badges, and extra whitespace
+        var cleanName = fullName.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F800}-\u{1F8FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+
+        if (cleanName && cleanName.length > 1) {
+          // Keep up to 2 words if reasonable (e.g. "Bitcoin AlphaX"), otherwise 1st word
+          var words = cleanName.split(/\s+/).filter(Boolean);
+          if (words.length <= 2 && cleanName.length <= 25) {
+            return cleanName;
+          }
+          return words[0];
+        }
+
+        if (handle) {
+          return handle;
+        }
+      }
+
+      // Check dialog "Replying to @..." text
+      var dialogReplyTo = document.querySelector('[role="dialog"]');
+      if (dialogReplyTo) {
+        var replyLabels = dialogReplyTo.querySelectorAll('div, span');
+        for (var k = 0; k < replyLabels.length; k++) {
+          var labelText = replyLabels[k].textContent.trim();
+          var match = labelText.match(/Replying to\s+(@\w+)/i);
+          if (match && match[1]) {
+            return match[1];
           }
         }
       }
 
       return null;
     } catch (e) {
-      console.error('[X-Commentator] Error extracting name:', e);
+      console.error('[X-Commentator] Error extracting poster name:', e);
       return null;
     }
   }
 
-  // ─── Extract Full Tweet Text ───────────────────────────────
-  function extractTweetText(tweetArticle) {
+  // ─── Extract Tweet Text & Media Context (Images, Videos, Links) ──
+  function extractTweetContent(tweetArticle) {
     try {
+      var tweetText = '';
+      var mediaContext = [];
+
+      // 1. Text extraction (including emoji alts)
       var tweetTextEl = tweetArticle.querySelector('[data-testid="tweetText"]');
       if (!tweetTextEl) {
         tweetTextEl = tweetArticle.querySelector('div[lang]');
       }
-      if (!tweetTextEl) return null;
+      if (tweetTextEl) {
+        var walker = document.createTreeWalker(
+          tweetTextEl,
+          NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
+          null,
+          false
+        );
+        var node;
+        while (node = walker.nextNode()) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            tweetText += node.textContent;
+          } else if (node.tagName === 'IMG' && node.alt) {
+            tweetText += node.alt;
+          }
+        }
+        tweetText = tweetText.trim();
+      }
 
-      var text = '';
-      var walker = document.createTreeWalker(
-        tweetTextEl,
-        NodeFilter.SHOW_TEXT | NodeFilter.SHOW_ELEMENT,
-        null,
-        false
-      );
+      // 2. Photos / Images extraction (reads user descriptions & alt text)
+      var photoEls = tweetArticle.querySelectorAll('[data-testid="tweetPhoto"] img, [data-testid="card.layoutLarge.media"] img');
+      if (photoEls.length > 0) {
+        var photoAlts = [];
+        photoEls.forEach(function (img) {
+          var alt = (img.getAttribute('alt') || '').trim();
+          if (alt && alt.toLowerCase() !== 'image' && alt.toLowerCase() !== 'embedded image') {
+            photoAlts.push('"' + alt + '"');
+          }
+        });
 
-      var node;
-      while (node = walker.nextNode()) {
-        if (node.nodeType === Node.TEXT_NODE) {
-          text += node.textContent;
-        } else if (node.tagName === 'IMG' && node.alt) {
-          text += node.alt;
+        if (photoAlts.length > 0) {
+          mediaContext.push(`[Attached Photo: ${photoAlts.join(', ')}]`);
+        } else {
+          mediaContext.push(`[Attached: ${photoEls.length} Photo/Image in post]`);
         }
       }
 
-      return text.trim();
+      // 3. Videos / GIFs extraction
+      var videoEl = tweetArticle.querySelector('[data-testid="videoPlayer"], [data-testid="videoComponent"], video');
+      if (videoEl) {
+        var ariaLabel = videoEl.getAttribute('aria-label') || '';
+        if (ariaLabel && !ariaLabel.toLowerCase().includes('video player')) {
+          mediaContext.push(`[Attached Video/Clip: "${ariaLabel}"]`);
+        } else {
+          mediaContext.push('[Attached: Video/Clip in post]');
+        }
+      }
+
+      // 4. Link / Card Previews (News headlines, Article summaries)
+      var cardWrapper = tweetArticle.querySelector('[data-testid="card.wrapper"]');
+      if (cardWrapper) {
+        var cardDetail = cardWrapper.querySelector('[data-testid="card.layoutLarge.detail"], [data-testid="card.layoutSmall.detail"]');
+        var cardTitle = cardDetail ? cardDetail.innerText.replace(/\n+/g, ' — ').trim() : '';
+        if (cardTitle) {
+          mediaContext.push(`[Linked News/Article Card: "${cardTitle}"]`);
+        }
+      }
+
+      // 5. Quote Tweet context
+      var quoteTweet = tweetArticle.querySelector('[data-testid="quoteTweet"]');
+      if (quoteTweet) {
+        var quoteText = quoteTweet.innerText.replace(/\n+/g, ' ').substring(0, 150).trim();
+        if (quoteText) {
+          mediaContext.push(`[Quoting: "${quoteText}"]`);
+        }
+      }
+
+      // Combine text and media context
+      var fullPostContent = tweetText;
+      if (mediaContext.length > 0) {
+        var mediaStr = mediaContext.join('\n');
+        if (fullPostContent) {
+          fullPostContent += '\n' + mediaStr;
+        } else {
+          fullPostContent = mediaStr;
+        }
+      }
+
+      return fullPostContent.trim();
     } catch (e) {
-      return null;
+      console.error('[X-Commentator] Error extracting tweet content:', e);
+      return '';
     }
   }
 
@@ -346,17 +431,24 @@
           // Step 1: Click "Show more" to expand full post
           expandFullPost(tweetArticle);
 
-          // Step 2: Small delay for expansion, then extract
+          // Step 2: Small delay for expansion, then extract text, media & author
           setTimeout(function () {
-            var tweetText = extractTweetText(tweetArticle);
-            var posterName = extractPosterName(tweetArticle);
-            if (!tweetText) return;
+            var postContent = extractTweetContent(tweetArticle);
+            var posterName = extractPosterName(tweetArticle) || extractPosterName(null);
 
-            console.log('[X-Commentator] Tweet by ' + (posterName || '?') + ': ' + tweetText.substring(0, 60) + '...');
+            if (!postContent) {
+              console.log('[X-Commentator] No tweet content or media detected.');
+              return;
+            }
+
+            console.log('[X-Commentator] Tweet by ' + (posterName || 'Unknown') + ': ' + postContent.substring(0, 60) + '...');
 
             // Step 3: Wait for reply box to appear, then generate
             setTimeout(function () {
-              generateAndType(tweetText, posterName);
+              if (!posterName) {
+                posterName = extractPosterName(null) || extractPosterName(tweetArticle);
+              }
+              generateAndType(postContent, posterName);
             }, 800);
           }, 500);
 

@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const tempValueLabel = document.getElementById('tempValue');
   const maxTokensSlider = document.getElementById('maxTokens');
   const tokensValueLabel = document.getElementById('tokensValue');
+  const tokensCharsLabel = document.getElementById('tokensChars');
   const saveBtn = document.getElementById('saveBtn');
   const statusBadge = document.getElementById('statusBadge');
 
@@ -93,7 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
     tone: 'friendly',
     language: 'english',
     customPrompt: '',
-    maxTokens: 280,
+    maxTokens: 60,
     temperature: 0.8
   }, (settings) => {
     apiKeyInput.value = settings.apiKey || '';
@@ -122,8 +123,18 @@ document.addEventListener('DOMContentLoaded', () => {
     customPromptInput.value = settings.customPrompt;
     temperatureSlider.value = settings.temperature;
     tempValueLabel.textContent = settings.temperature;
-    maxTokensSlider.value = settings.maxTokens;
-    tokensValueLabel.textContent = settings.maxTokens;
+
+    // Migrate old 280 default to 60 for Twitter character limits
+    let tokens = settings.maxTokens || 60;
+    if (tokens > 90) {
+      tokens = 60;
+      saveSettingsToStorage({ maxTokens: 60 });
+    }
+    maxTokensSlider.value = tokens;
+    tokensValueLabel.textContent = tokens;
+    if (tokensCharsLabel) {
+      tokensCharsLabel.textContent = `~${Math.round(tokens * 3)} chars`;
+    }
 
     // Set active tone
     setActiveTone(settings.tone);
@@ -287,6 +298,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   maxTokensSlider.addEventListener('input', () => {
     tokensValueLabel.textContent = maxTokensSlider.value;
+    if (tokensCharsLabel) {
+      tokensCharsLabel.textContent = `~${Math.round(maxTokensSlider.value * 3)} chars`;
+    }
   });
 
   // ─── Status Badge ─────────────────────────────────────────

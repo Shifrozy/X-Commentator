@@ -51,18 +51,36 @@
 
     <!-- Model Selection -->
     <section class="settings-section">
-      <label class="input-label" for="model">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
-        </svg>
-        AI Model
-      </label>
+      <div class="model-header-row">
+        <label class="input-label" for="model">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+          </svg>
+          AI Model
+        </label>
+        <button id="refreshModelsBtn" class="refresh-models-btn" title="Sync available models from Groq API" type="button">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+          <span id="refreshModelsText">Sync Models</span>
+        </button>
+      </div>
       <select id="model">
-        <option value="llama-3.3-70b-versatile">LLaMA 3.3 70B (Best Quality)</option>
-        <option value="llama-3.1-8b-instant">LLaMA 3.1 8B (Fastest)</option>
-        <option value="mixtral-8x7b-32768">Mixtral 8x7B (Balanced)</option>
-        <option value="gemma2-9b-it">Gemma 2 9B</option>
+        <optgroup label="Production (Recommended)">
+          <option value="llama-3.3-70b-versatile">LLaMA 3.3 70B (Best Quality)</option>
+          <option value="llama-3.1-8b-instant">LLaMA 3.1 8B (Ultra Fast)</option>
+        </optgroup>
+        <optgroup label="Advanced Reasoning">
+          <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 Distill 70B (Reasoning)</option>
+          <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Flagship)</option>
+          <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Balanced)</option>
+        </optgroup>
+        <optgroup label="Lightweight Previews">
+          <option value="llama-3.2-3b-preview">LLaMA 3.2 3B (Fast & Compact)</option>
+          <option value="llama-3.2-1b-preview">LLaMA 3.2 1B (Ultra-Lightweight)</option>
+        </optgroup>
       </select>
+      <div id="modelStatusMsg" class="model-status-msg"></div>
     </section>
 
     <!-- Tone Selection -->

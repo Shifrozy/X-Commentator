@@ -5,7 +5,8 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 ## Features
 
 - 🎯 **Smart Comment Generation** — Reads tweet content and generates relevant, contextual comments
-- ⚡ **Powered by Groq** — Ultra-fast inference using LLaMA 3.3 70B and other models
+- ⚡ **Powered by Groq** — Ultra-fast inference using Meta LLaMA 3.3 70B, LLaMA 3.1 8B, DeepSeek R1 Distill, and OpenAI GPT-OSS
+- 🔄 **Live Model Sync** — Auto-fetch and sync the latest available models straight from your Groq API key
 - 🎭 **6 Tone Options** — Friendly, Professional, Funny, Supportive, Savage, Intellectual
 - 🌍 **Multi-Language** — English, Urdu (Roman), Hindi (Roman), Arabic
 - 📋 **Preview & Edit** — See the generated comment before posting, with Copy/Regenerate/Reply options
@@ -28,6 +29,7 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 1. Go to [console.groq.com/keys](https://console.groq.com/keys)
 2. Create a free account and generate an API key
 3. Click the extension icon → Paste your API key → Save
+4. (Optional) Click **"Sync Models"** to sync all available models from your account!
 
 ## Usage
 
@@ -45,7 +47,8 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 | Setting | Description |
 |---------|-------------|
 | **API Key** | Your Groq API key (required) |
-| **Model** | LLaMA 3.3 70B (best), LLaMA 3.1 8B (fastest), Mixtral, Gemma |
+| **Model** | LLaMA 3.3 70B (Best Quality), LLaMA 3.1 8B (Fastest), DeepSeek R1, GPT-OSS 120B/20B, LLaMA 3.2 |
+| **Sync Models** | Fetch live list of active models supported by your Groq API key |
 | **Tone** | Comment personality style |
 | **Language** | Response language |
 | **Custom Instructions** | Additional prompt guidance |
@@ -56,7 +59,7 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 
 - **Platform**: Chrome Extension (Manifest V3)
 - **Language**: JavaScript (Vanilla)
-- **AI**: Groq API (LLaMA 3.3 70B)
+- **AI**: Groq API (LLaMA 3.3 70B / LLaMA 3.1 8B / DeepSeek R1)
 - **Styling**: Pure CSS with glassmorphism
 
 ## Project Structure

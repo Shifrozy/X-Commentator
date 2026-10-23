@@ -397,9 +397,10 @@ select option {
   color: var(--accent);
 }
 
-.tone-emoji {
-  font-size: 17px;
-  line-height: 1;
+.tone-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
 
 .tone-name {

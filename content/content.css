@@ -1,6 +1,6 @@
 /* ═══════════════════════════════════════════════════════════
-   X-Commentator AI — Content Script Styles
-   Toast notifications + Comment preview toast at bottom
+   X-Commentator — Content Script Styles
+   Flat charcoal theme · Matches popup design
    ═══════════════════════════════════════════════════════════ */
 
 /* ─── Small Toast (status messages) ───────────────────────── */
@@ -8,19 +8,18 @@
   position: fixed !important;
   bottom: 24px !important;
   left: 50% !important;
-  transform: translateX(-50%) translateY(20px) !important;
-  padding: 12px 24px !important;
-  border-radius: 12px !important;
-  font-size: 14px !important;
+  transform: translateX(-50%) translateY(16px) !important;
+  padding: 9px 18px !important;
+  border-radius: 6px !important;
+  font-size: 13px !important;
   font-weight: 500 !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   z-index: 2147483647 !important;
   opacity: 0 !important;
-  transition: all 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+  transition: opacity 0.2s ease, transform 0.2s ease !important;
   pointer-events: none !important;
   white-space: nowrap !important;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4) !important;
-  backdrop-filter: blur(12px) !important;
+  border: 1px solid !important;
 }
 
 .xcai-toast-visible {
@@ -29,39 +28,38 @@
 }
 
 .xcai-toast-success {
-  background: linear-gradient(135deg, rgba(34, 197, 94, 0.95), rgba(22, 163, 74, 0.98)) !important;
-  color: white !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background: #1a2e1e !important;
+  color: #3ecf8e !important;
+  border-color: rgba(62, 207, 142, 0.25) !important;
 }
 
 .xcai-toast-error {
-  background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.98)) !important;
-  color: white !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background: #2a1a1a !important;
+  color: #f06060 !important;
+  border-color: rgba(240, 96, 96, 0.25) !important;
 }
 
 .xcai-toast-info {
-  background: linear-gradient(135deg, rgba(120, 86, 255, 0.95), rgba(88, 55, 220, 0.98)) !important;
-  color: white !important;
-  border: 1px solid rgba(255, 255, 255, 0.15) !important;
+  background: #1c1c1c !important;
+  color: #e8813c !important;
+  border-color: rgba(232, 129, 60, 0.25) !important;
 }
 
-/* ─── Comment Toast (shows full AI comment at bottom) ─────── */
+/* ─── Comment Toast (bottom bar — single line) ─────────────── */
 .xcai-comment-toast {
   position: fixed !important;
   bottom: 20px !important;
   left: 50% !important;
-  transform: translateX(-50%) translateY(30px) !important;
-  width: 420px !important;
-  max-width: 90vw !important;
+  transform: translateX(-50%) translateY(20px) !important;
+  width: 480px !important;
+  max-width: 92vw !important;
   padding: 0 !important;
-  border-radius: 16px !important;
-  background: #1a1a2e !important;
-  border: 1px solid rgba(120, 86, 255, 0.35) !important;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.5), 0 0 20px rgba(120, 86, 255, 0.1) !important;
+  border-radius: 8px !important;
+  background: #1c1c1c !important;
+  border: 1px solid #3a3a3a !important;
   z-index: 2147483647 !important;
   opacity: 0 !important;
-  transition: all 0.35s cubic-bezier(0.25, 0.46, 0.45, 0.94) !important;
+  transition: opacity 0.25s ease, transform 0.25s ease !important;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
   overflow: hidden !important;
   pointer-events: auto !important;
@@ -72,71 +70,78 @@
   transform: translateX(-50%) translateY(0) !important;
 }
 
-/* Comment toast header */
+/* Top label bar */
 .xcai-ct-header {
-  padding: 12px 16px 8px 16px !important;
-  font-size: 13px !important;
-  font-weight: 700 !important;
-  color: #22c55e !important;
-  letter-spacing: 0.2px !important;
-  border-bottom: 1px solid rgba(120, 86, 255, 0.12) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  padding: 8px 12px !important;
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  color: #3ecf8e !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.8px !important;
+  border-bottom: 1px solid #2e2e2e !important;
+  background: #181818 !important;
 }
 
-/* Comment toast body (the actual comment) */
+.xcai-ct-header::before {
+  content: '' !important;
+  width: 6px !important;
+  height: 6px !important;
+  border-radius: 50% !important;
+  background: #3ecf8e !important;
+  flex-shrink: 0 !important;
+  display: inline-block !important;
+}
+
+/* Comment body — single line, truncated with ellipsis */
 .xcai-ct-body {
-  padding: 12px 16px !important;
-  font-size: 15px !important;
-  line-height: 1.5 !important;
-  color: #e4e4e7 !important;
-  word-wrap: break-word !important;
-  max-height: 120px !important;
-  overflow-y: auto !important;
+  padding: 11px 40px 11px 14px !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  color: #f0f0f0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-height: unset !important;
+  letter-spacing: 0.1px !important;
 }
 
-/* Comment toast footer */
+/* Footer hint */
 .xcai-ct-footer {
-  padding: 8px 16px 12px 16px !important;
-  font-size: 12px !important;
-  color: #71717a !important;
-  font-weight: 500 !important;
-  border-top: 1px solid rgba(255, 255, 255, 0.06) !important;
+  padding: 7px 14px !important;
+  font-size: 10.5px !important;
+  color: #555555 !important;
+  font-weight: 400 !important;
+  border-top: 1px solid #2e2e2e !important;
+  letter-spacing: 0.2px !important;
 }
 
 /* Close button */
 .xcai-ct-close {
   position: absolute !important;
-  top: 8px !important;
+  top: 50% !important;
   right: 10px !important;
-  width: 24px !important;
-  height: 24px !important;
+  transform: translateY(-50%) !important;
+  width: 22px !important;
+  height: 22px !important;
   display: flex !important;
   align-items: center !important;
   justify-content: center !important;
-  background: rgba(255, 255, 255, 0.06) !important;
+  background: #2e2e2e !important;
   border: none !important;
-  border-radius: 50% !important;
-  color: #71717a !important;
-  font-size: 12px !important;
+  border-radius: 4px !important;
+  color: #666666 !important;
+  font-size: 11px !important;
   cursor: pointer !important;
-  transition: all 0.2s ease !important;
+  transition: background 0.15s, color 0.15s !important;
   padding: 0 !important;
+  line-height: 1 !important;
 }
 
 .xcai-ct-close:hover {
-  background: rgba(239, 68, 68, 0.15) !important;
-  color: #ef4444 !important;
+  background: rgba(240, 96, 96, 0.15) !important;
+  color: #f06060 !important;
 }
 
-/* Comment toast body scrollbar */
-.xcai-ct-body::-webkit-scrollbar {
-  width: 4px !important;
-}
-
-.xcai-ct-body::-webkit-scrollbar-track {
-  background: transparent !important;
-}
-
-.xcai-ct-body::-webkit-scrollbar-thumb {
-  background: rgba(120, 86, 255, 0.3) !important;
-  border-radius: 2px !important;
-}

@@ -22,9 +22,16 @@
           <p class="header-subtitle">AI-Powered Comments</p>
         </div>
       </div>
-      <div class="status-badge" id="statusBadge">
-        <span class="status-dot"></span>
-        <span class="status-text">Inactive</span>
+      <div class="header-actions">
+        <button id="reloadExtBtn" class="reload-ext-btn" title="Reload extension & service worker" type="button">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
+          </svg>
+        </button>
+        <div class="status-badge" id="statusBadge">
+          <span class="status-dot"></span>
+          <span class="status-text">Inactive</span>
+        </div>
       </div>
     </header>
 
@@ -58,7 +65,7 @@
           </svg>
           AI Model
         </label>
-        <button id="refreshModelsBtn" class="refresh-models-btn" title="Sync available models from Groq API" type="button">
+        <button id="refreshModelsBtn" class="refresh-models-btn" title="Sync live models from Groq API" type="button">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"/>
           </svg>
@@ -66,16 +73,16 @@
         </button>
       </div>
       <select id="model">
-        <optgroup label="Production (Recommended)">
-          <option value="llama-3.3-70b-versatile">LLaMA 3.3 70B (Best Quality)</option>
-          <option value="llama-3.1-8b-instant">LLaMA 3.1 8B (Ultra Fast)</option>
+        <optgroup label="Best for Comments (Instant & Free)">
+          <option value="llama-3.1-8b-instant" selected>LLaMA 3.1 8B (Fastest & Best for Comments)</option>
         </optgroup>
-        <optgroup label="Advanced Reasoning">
+        <optgroup label="Flagship & Intelligence">
+          <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Flagship Quality)</option>
+          <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Fast & Balanced)</option>
+          <option value="qwen/qwen3.6-27b">Qwen 3.6 27B (Multilingual)</option>
           <option value="deepseek-r1-distill-llama-70b">DeepSeek R1 Distill 70B (Reasoning)</option>
-          <option value="openai/gpt-oss-120b">OpenAI GPT-OSS 120B (Flagship)</option>
-          <option value="openai/gpt-oss-20b">OpenAI GPT-OSS 20B (Balanced)</option>
         </optgroup>
-        <optgroup label="Lightweight Previews">
+        <optgroup label="Lightweight Models">
           <option value="llama-3.2-3b-preview">LLaMA 3.2 3B (Fast & Compact)</option>
           <option value="llama-3.2-1b-preview">LLaMA 3.2 1B (Ultra-Lightweight)</option>
         </optgroup>

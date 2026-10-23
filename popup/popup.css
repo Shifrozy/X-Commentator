@@ -100,6 +100,39 @@ body {
   letter-spacing: 0.3px;
 }
 
+/* ─── Header Actions & Reload Button ─────────────────────── */
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.reload-ext-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(120, 86, 255, 0.2);
+  color: #a1a1aa;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.25s ease;
+  outline: none;
+}
+
+.reload-ext-btn:hover {
+  background: rgba(120, 86, 255, 0.25);
+  border-color: rgba(120, 86, 255, 0.5);
+  color: #ffffff;
+  transform: rotate(90deg);
+}
+
+.reload-ext-btn:active {
+  transform: scale(0.92) rotate(180deg);
+}
+
 /* ─── Status Badge ────────────────────────────────────────── */
 .status-badge {
   display: flex;

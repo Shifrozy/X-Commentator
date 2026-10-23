@@ -5,19 +5,21 @@
 
 // Known decommissioned / retired models on Groq
 const DECOMMISSIONED_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-70b-versatile',
   'mixtral-8x7b-32768',
   'gemma2-9b-it',
   'gemma-7b-it',
   'llama3-70b-8192',
   'llama3-8b-8192',
-  'llama-3.1-70b-versatile',
   'llama-3.2-11b-vision-preview',
   'llama-3.2-90b-vision-preview',
   'llama-3.2-11b-text-preview',
   'llama-3.2-90b-text-preview'
 ];
 
-const FALLBACK_MODEL = 'llama-3.3-70b-versatile';
+// llama-3.1-8b-instant is the fastest, reliable, free-tier workhorse for comments (~560 tokens/sec)
+const FALLBACK_MODEL = 'llama-3.1-8b-instant';
 
 // Default settings
 const DEFAULT_SETTINGS = {
@@ -30,19 +32,38 @@ const DEFAULT_SETTINGS = {
   temperature: 0.8
 };
 
+// In-memory cache to ensure instant updates without storage sync delays
+let cachedSettings = null;
+
+// Listen for storage changes in real-time
+chrome.storage.onChanged.addListener((changes) => {
+  if (!cachedSettings) cachedSettings = { ...DEFAULT_SETTINGS };
+  for (const key in changes) {
+    cachedSettings[key] = changes[key].newValue;
+  }
+  console.log('[X-Commentator SW] Settings updated via storage listener:', cachedSettings);
+});
+
 /**
- * Get stored settings from Chrome storage
+ * Get stored settings from Chrome storage (checks local first, then sync)
  */
 async function getSettings() {
   return new Promise((resolve) => {
-    chrome.storage.sync.get(DEFAULT_SETTINGS, (result) => {
-      // Auto-migrate if stored model is decommissioned
-      if (result.model && DECOMMISSIONED_MODELS.includes(result.model.toLowerCase())) {
-        console.warn(`[X-Commentator] Migrating stored decommissioned model "${result.model}" to "${FALLBACK_MODEL}".`);
-        result.model = FALLBACK_MODEL;
-        chrome.storage.sync.set({ model: FALLBACK_MODEL });
-      }
-      resolve(result);
+    chrome.storage.local.get(DEFAULT_SETTINGS, (localData) => {
+      chrome.storage.sync.get(DEFAULT_SETTINGS, (syncData) => {
+        let result = { ...DEFAULT_SETTINGS, ...syncData, ...localData, ...(cachedSettings || {}) };
+
+        // Auto-migrate if stored model is decommissioned
+        if (result.model && DECOMMISSIONED_MODELS.includes(result.model.toLowerCase())) {
+          console.warn(`[X-Commentator SW] Migrating stored decommissioned model "${result.model}" to "${FALLBACK_MODEL}".`);
+          result.model = FALLBACK_MODEL;
+          chrome.storage.local.set({ model: FALLBACK_MODEL });
+          chrome.storage.sync.set({ model: FALLBACK_MODEL });
+        }
+
+        cachedSettings = result;
+        resolve(result);
+      });
     });
   });
 }
@@ -101,8 +122,10 @@ async function generateComment(tweetText, settings, posterName) {
   // Ensure model is valid and not decommissioned
   let model = settings.model || FALLBACK_MODEL;
   if (DECOMMISSIONED_MODELS.includes(model.toLowerCase())) {
-    console.warn(`[X-Commentator] Model "${model}" is decommissioned. Migrating to ${FALLBACK_MODEL}.`);
+    console.warn(`[X-Commentator SW] Model "${model}" is decommissioned. Migrating to ${FALLBACK_MODEL}.`);
     model = FALLBACK_MODEL;
+    settings.model = FALLBACK_MODEL;
+    chrome.storage.local.set({ model: FALLBACK_MODEL });
     chrome.storage.sync.set({ model: FALLBACK_MODEL });
   }
 
@@ -136,12 +159,15 @@ async function generateComment(tweetText, settings, posterName) {
 
     // Check if error is due to decommissioned or non-existent model
     const isModelError = errorCode === 'model_decommissioned' ||
+                         response.status === 404 ||
                          /model.*(not found|does not exist|decommissioned|unavailable)/i.test(errorMsg);
 
-    // Auto-retry with FALLBACK_MODEL if original model failed
+    // Auto-retry with FALLBACK_MODEL (llama-3.1-8b-instant) if original model failed
     if (isModelError && model !== FALLBACK_MODEL) {
-      console.warn(`[X-Commentator] Model "${model}" not available (${errorMsg}). Retrying with ${FALLBACK_MODEL}...`);
+      console.warn(`[X-Commentator SW] Model "${model}" not available (${errorMsg}). Retrying with ${FALLBACK_MODEL}...`);
       payload.model = FALLBACK_MODEL;
+      settings.model = FALLBACK_MODEL;
+      chrome.storage.local.set({ model: FALLBACK_MODEL });
       chrome.storage.sync.set({ model: FALLBACK_MODEL });
 
       response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -195,15 +221,30 @@ async function generateComment(tweetText, settings, posterName) {
 }
 
 /**
- * Listen for messages from content script
+ * Listen for messages from content script or popup
  */
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  if (request.action === 'updateSettings') {
+    cachedSettings = { ...DEFAULT_SETTINGS, ...request.settings };
+    if (request.settings && request.settings.model) {
+      chrome.storage.local.set({ model: request.settings.model });
+      chrome.storage.sync.set({ model: request.settings.model });
+    }
+    console.log('[X-Commentator SW] Received updateSettings message:', cachedSettings);
+    sendResponse({ success: true, settings: cachedSettings });
+    return true;
+  }
+
   if (request.action === 'generateComment') {
     (async () => {
       try {
         const settings = await getSettings();
+        // If content script passed a requested model, prioritize it if not decommissioned
+        if (request.model && !DECOMMISSIONED_MODELS.includes(request.model.toLowerCase())) {
+          settings.model = request.model;
+        }
         const comment = await generateComment(request.tweetText, settings, request.posterName || '');
-        sendResponse({ success: true, comment });
+        sendResponse({ success: true, comment, modelUsed: settings.model });
       } catch (error) {
         sendResponse({ success: false, error: error.message });
       }

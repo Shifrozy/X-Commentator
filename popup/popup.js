@@ -5,19 +5,45 @@
 
 // Known decommissioned / retired models on Groq
 const DECOMMISSIONED_MODELS = [
+  'llama-3.3-70b-versatile',
+  'llama-3.1-70b-versatile',
   'mixtral-8x7b-32768',
   'gemma2-9b-it',
   'gemma-7b-it',
   'llama3-70b-8192',
   'llama3-8b-8192',
-  'llama-3.1-70b-versatile',
   'llama-3.2-11b-vision-preview',
   'llama-3.2-90b-vision-preview',
   'llama-3.2-11b-text-preview',
   'llama-3.2-90b-text-preview'
 ];
 
-const FALLBACK_MODEL = 'llama-3.3-70b-versatile';
+// Best, fastest, free-tier workhorse model for comments
+const FALLBACK_MODEL = 'llama-3.1-8b-instant';
+
+// Dual-storage helper: saves to both local and sync, and notifies service worker
+function saveSettingsToStorage(settings, callback) {
+  chrome.storage.local.set(settings, () => {
+    chrome.storage.sync.set(settings, () => {
+      // Notify active service worker immediately
+      try {
+        chrome.runtime.sendMessage({ action: 'updateSettings', settings }, () => {
+          if (chrome.runtime.lastError) {} // Ignore if worker is sleeping
+        });
+      } catch (e) {}
+      if (callback) callback();
+    });
+  });
+}
+
+function loadSettingsFromStorage(defaults, callback) {
+  chrome.storage.local.get(defaults, (localData) => {
+    chrome.storage.sync.get(defaults, (syncData) => {
+      const merged = { ...defaults, ...syncData, ...localData };
+      callback(merged);
+    });
+  });
+}
 
 document.addEventListener('DOMContentLoaded', () => {
   // ─── DOM Elements ────────────────────────────────────────
@@ -27,6 +53,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const refreshModelsBtn = document.getElementById('refreshModelsBtn');
   const refreshModelsText = document.getElementById('refreshModelsText');
   const modelStatusMsg = document.getElementById('modelStatusMsg');
+  const reloadExtBtn = document.getElementById('reloadExtBtn');
   const toneGrid = document.getElementById('toneGrid');
   const languageSelect = document.getElementById('language');
   const customPromptInput = document.getElementById('customPrompt');
@@ -49,8 +76,18 @@ document.addEventListener('DOMContentLoaded', () => {
     modelStatusMsg.className = 'model-status-msg';
   }
 
+  // ─── Reload Extension Button ──────────────────────────────
+  if (reloadExtBtn) {
+    reloadExtBtn.addEventListener('click', () => {
+      showModelStatus('Reloading extension...', 'warning');
+      setTimeout(() => {
+        chrome.runtime.reload();
+      }, 250);
+    });
+  }
+
   // ─── Load Saved Settings ─────────────────────────────────
-  chrome.storage.sync.get({
+  loadSettingsFromStorage({
     apiKey: '',
     model: FALLBACK_MODEL,
     tone: 'friendly',
@@ -66,8 +103,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (DECOMMISSIONED_MODELS.includes(selectedModel.toLowerCase())) {
       console.warn(`[X-Commentator] Migrating decommissioned model "${selectedModel}" to "${FALLBACK_MODEL}".`);
       selectedModel = FALLBACK_MODEL;
-      chrome.storage.sync.set({ model: FALLBACK_MODEL });
-      showModelStatus('Decommissioned model migrated to LLaMA 3.3 70B', 'warning');
+      saveSettingsToStorage({ model: FALLBACK_MODEL });
+      showModelStatus('Migrated to LLaMA 3.1 8B (fastest)', 'warning');
       setTimeout(clearModelStatus, 3500);
     }
 
@@ -76,7 +113,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!modelFound) {
       const customOpt = document.createElement('option');
       customOpt.value = selectedModel;
-      customOpt.textContent = `${selectedModel} (Saved)`;
+      customOpt.textContent = `${selectedModel} (Active)`;
       modelSelect.appendChild(customOpt);
     }
     modelSelect.value = selectedModel;
@@ -95,11 +132,12 @@ document.addEventListener('DOMContentLoaded', () => {
     updateStatusBadge(settings.apiKey);
   });
 
-  // ─── Auto-save model selection when changed ──────────────
+  // ─── Auto-save model selection immediately when changed ───
   modelSelect.addEventListener('change', () => {
-    chrome.storage.sync.set({ model: modelSelect.value }, () => {
-      const selectedText = modelSelect.options[modelSelect.selectedIndex]?.text || modelSelect.value;
-      showModelStatus(`Selected: ${selectedText}`, 'success');
+    const newModel = modelSelect.value;
+    saveSettingsToStorage({ model: newModel }, () => {
+      const selectedText = modelSelect.options[modelSelect.selectedIndex]?.text || newModel;
+      showModelStatus(`✓ Saved: ${selectedText}`, 'success');
       setTimeout(clearModelStatus, 2500);
     });
   });
@@ -139,12 +177,13 @@ document.addEventListener('DOMContentLoaded', () => {
         throw new Error('Unexpected response format from Groq.');
       }
 
-      // Filter for chat completion / text generation models
+      // Filter for chat completion / text generation models (exclude whisper, guard, audio, embedding, tts)
       const activeChatModels = data.data
         .map(m => m.id)
         .filter(id => {
           const lower = id.toLowerCase();
-          return !lower.includes('whisper') &&
+          return !DECOMMISSIONED_MODELS.includes(lower) &&
+                 !lower.includes('whisper') &&
                  !lower.includes('guard') &&
                  !lower.includes('audio') &&
                  !lower.includes('embedding') &&
@@ -152,10 +191,10 @@ document.addEventListener('DOMContentLoaded', () => {
                  !lower.includes('orpheus');
         })
         .sort((a, b) => {
-          if (a.includes('llama-3.3-70b')) return -1;
-          if (b.includes('llama-3.3-70b')) return 1;
           if (a.includes('llama-3.1-8b')) return -1;
           if (b.includes('llama-3.1-8b')) return 1;
+          if (a.includes('openai')) return -1;
+          if (b.includes('openai')) return 1;
           return a.localeCompare(b);
         });
 
@@ -175,11 +214,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Friendly label
         let label = modelId;
-        if (modelId === 'llama-3.3-70b-versatile') label = 'LLaMA 3.3 70B (Best Quality)';
-        else if (modelId === 'llama-3.1-8b-instant') label = 'LLaMA 3.1 8B (Ultra Fast)';
+        if (modelId === 'llama-3.1-8b-instant') label = 'LLaMA 3.1 8B (Fastest & Best for Comments)';
+        else if (modelId === 'openai/gpt-oss-120b') label = 'OpenAI GPT-OSS 120B (Flagship Quality)';
+        else if (modelId === 'openai/gpt-oss-20b') label = 'OpenAI GPT-OSS 20B (Fast & Balanced)';
+        else if (modelId === 'qwen/qwen3.6-27b') label = 'Qwen 3.6 27B (Multilingual)';
         else if (modelId === 'deepseek-r1-distill-llama-70b') label = 'DeepSeek R1 Distill 70B (Reasoning)';
-        else if (modelId === 'openai/gpt-oss-120b') label = 'OpenAI GPT-OSS 120B (Flagship)';
-        else if (modelId === 'openai/gpt-oss-20b') label = 'OpenAI GPT-OSS 20B (Balanced)';
         else if (modelId.startsWith('llama-3.2-3b')) label = 'LLaMA 3.2 3B (Fast & Compact)';
         else if (modelId.startsWith('llama-3.2-1b')) label = 'LLaMA 3.2 1B (Ultra-Lightweight)';
 
@@ -194,13 +233,13 @@ document.addEventListener('DOMContentLoaded', () => {
         modelSelect.value = previousSelected;
       } else if (activeChatModels.includes(FALLBACK_MODEL)) {
         modelSelect.value = FALLBACK_MODEL;
-        chrome.storage.sync.set({ model: FALLBACK_MODEL });
+        saveSettingsToStorage({ model: FALLBACK_MODEL });
       } else {
         modelSelect.value = activeChatModels[0];
-        chrome.storage.sync.set({ model: activeChatModels[0] });
+        saveSettingsToStorage({ model: activeChatModels[0] });
       }
 
-      showModelStatus(`✓ Synced ${activeChatModels.length} active models from Groq!`, 'success');
+      showModelStatus(`✓ Synced ${activeChatModels.length} live models!`, 'success');
       setTimeout(clearModelStatus, 3500);
     } catch (err) {
       showModelStatus(`Sync error: ${err.message}`, 'error');
@@ -285,8 +324,8 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    // Save to Chrome storage
-    chrome.storage.sync.set(settings, () => {
+    // Save to Chrome storage (local + sync)
+    saveSettingsToStorage(settings, () => {
       // Visual feedback
       const originalText = saveBtn.innerHTML;
       saveBtn.classList.add('saved');
@@ -298,11 +337,13 @@ document.addEventListener('DOMContentLoaded', () => {
       `;
 
       updateStatusBadge(settings.apiKey);
+      showModelStatus(`Active: ${modelSelect.value}`, 'success');
 
       setTimeout(() => {
         saveBtn.classList.remove('saved');
         saveBtn.innerHTML = originalText;
-      }, 1500);
+        clearModelStatus();
+      }, 2000);
     });
   });
 

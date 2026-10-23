@@ -278,47 +278,56 @@
     currentGenerationId++;
     var myGenId = currentGenerationId;
 
-    console.log('[X-Commentator] Generating (gen #' + myGenId + ') for @' + (posterName || 'unknown') + '...');
-    showToast('✨ Generating AI comment...', 'info');
+    // Read stored model directly so user always gets the latest selected model
+    chrome.storage.local.get({ model: 'llama-3.1-8b-instant' }, function (localData) {
+      chrome.storage.sync.get({ model: 'llama-3.1-8b-instant' }, function (syncData) {
+        var activeModel = localData.model || syncData.model || 'llama-3.1-8b-instant';
+        
+        console.log('[X-Commentator] Generating (gen #' + myGenId + ') with ' + activeModel + ' for @' + (posterName || 'unknown') + '...');
+        showToast('✨ Generating comment (' + activeModel + ')...', 'info', 3000);
 
-    try {
-      chrome.runtime.sendMessage({
-        action: 'generateComment',
-        tweetText: tweetText,
-        posterName: posterName || ''
-      }, function (response) {
-        if (myGenId !== currentGenerationId) return;
+        try {
+          chrome.runtime.sendMessage({
+            action: 'generateComment',
+            tweetText: tweetText,
+            posterName: posterName || '',
+            model: activeModel
+          }, function (response) {
+            if (myGenId !== currentGenerationId) return;
 
-        if (chrome.runtime.lastError) {
-          showToast('Extension error. Reload the page.', 'error');
-          return;
-        }
+            if (chrome.runtime.lastError) {
+              showToast('Extension reloaded. Please refresh the page.', 'error');
+              return;
+            }
 
-        if (response && response.success) {
-          var comment = response.comment;
-          console.log('[X-Commentator] Comment:', comment);
+            if (response && response.success) {
+              var comment = response.comment;
+              var modelUsed = response.modelUsed || activeModel;
+              console.log('[X-Commentator] Comment generated using ' + modelUsed + ':', comment);
 
-          // Step 1: Copy to clipboard
-          navigator.clipboard.writeText(comment).then(function () {
-            // Step 2: Show in bottom toast card
-            showCommentToast(comment);
+              // Step 1: Copy to clipboard
+              navigator.clipboard.writeText(comment).then(function () {
+                // Step 2: Show in bottom toast card
+                showCommentToast(comment);
 
-            // Step 3: Auto-paste into reply box
-            setTimeout(function () {
-              autoPasteIntoReplyBox(comment);
-            }, 400);
-          }).catch(function () {
-            showCommentToast(comment);
+                // Step 3: Auto-paste into reply box
+                setTimeout(function () {
+                  autoPasteIntoReplyBox(comment);
+                }, 400);
+              }).catch(function () {
+                showCommentToast(comment);
+              });
+
+            } else {
+              var errMsg = (response && response.error) ? response.error : 'Failed to generate.';
+              showToast('❌ ' + errMsg, 'error', 6000);
+            }
           });
-
-        } else {
-          var errMsg = (response && response.error) ? response.error : 'Failed to generate.';
-          showToast('❌ ' + errMsg, 'error');
+        } catch (e) {
+          showToast('Extension error. Please reload the extension at chrome://extensions', 'error');
         }
       });
-    } catch (e) {
-      showToast('Extension error.', 'error');
-    }
+    });
   }
 
   // ─── Hook into X's reply buttons ──────────────────────────

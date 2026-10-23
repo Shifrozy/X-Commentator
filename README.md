@@ -5,7 +5,7 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 ## Features
 
 - 🎯 **Smart Comment Generation** — Reads tweet content and generates relevant, contextual comments
-- ⚡ **Powered by Groq** — Ultra-fast inference using Meta LLaMA 3.3 70B, LLaMA 3.1 8B, DeepSeek R1 Distill, and OpenAI GPT-OSS
+- ⚡ **Powered by Groq** — Ultra-fast inference using Meta LLaMA 3.1 8B (Recommended for comments), OpenAI GPT-OSS, and DeepSeek R1
 - 🔄 **Live Model Sync** — Auto-fetch and sync the latest available models straight from your Groq API key
 - 🎭 **6 Tone Options** — Friendly, Professional, Funny, Supportive, Savage, Intellectual
 - 🌍 **Multi-Language** — English, Urdu (Roman), Hindi (Roman), Arabic
@@ -23,13 +23,15 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 4. Click **"Load unpacked"**
 5. Select the `X-Commentator` folder
 6. The extension icon will appear in your toolbar!
+7. **Important**: Whenever updating extension files, click the **Reload** (🔄) button in `chrome://extensions/` or inside the popup header to apply changes.
 
 ### Setup API Key
 
 1. Go to [console.groq.com/keys](https://console.groq.com/keys)
 2. Create a free account and generate an API key
 3. Click the extension icon → Paste your API key → Save
-4. (Optional) Click **"Sync Models"** to sync all available models from your account!
+4. Select **LLaMA 3.1 8B** (Recommended for instant, human-like comments)
+5. (Optional) Click **"Sync Models"** to sync all available models from your account!
 
 ## Usage
 
@@ -47,7 +49,7 @@ AI-powered Chrome extension that automatically reads X (Twitter) posts and gener
 | Setting | Description |
 |---------|-------------|
 | **API Key** | Your Groq API key (required) |
-| **Model** | LLaMA 3.3 70B (Best Quality), LLaMA 3.1 8B (Fastest), DeepSeek R1, GPT-OSS 120B/20B, LLaMA 3.2 |
+| **Model** | **LLaMA 3.1 8B** (Fastest & Best for Comments), OpenAI GPT-OSS 120B/20B, Qwen 3.6 27B, DeepSeek R1, LLaMA 3.2 |
 | **Sync Models** | Fetch live list of active models supported by your Groq API key |
 | **Tone** | Comment personality style |
 | **Language** | Response language |
